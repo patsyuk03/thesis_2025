@@ -9,7 +9,7 @@ model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    viewer.cam.distance = 4  # Camera distance
+    viewer.cam.distance = 4
     start = time.time()
     while viewer.is_running() and time.time() - start < 30:
         step_start = time.time()

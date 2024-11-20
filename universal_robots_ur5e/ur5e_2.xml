@@ -58,12 +58,11 @@
     <mesh name="wrist2_2_2" file="wrist2_2.obj"/>
     <mesh name="wrist3_2" file="wrist3.obj"/>
   </asset>
-
   <worldbody>
     <light name="spotlight_2" mode="targetbodycom" target="wrist_2_link_2" pos="0 -1 2"/>
-    <body name="table_2" pos="-0.3 0 0.4">
-      <geom name="table_geom_2" type="box" size="0.2 0.2 0.025" rgba="0.6 0.4 0.3 1"/>
-      <body name="base_2" quat="1 0 0 1" childclass="ur5e_2" pos="0 0 0">
+    <body name="table_2" pos="-0.776 0.342 0.545">
+      <geom name="table_geom_2" type="box" size="0.2 0.375 0.025" rgba="0.6 0.4 0.3 1"/>
+      <body name="base_2" quat="1 0 0 1" childclass="ur5e_2" pos="-0.107 -0.31 0.025">
         <inertial mass="4.0" pos="0 0 0" diaginertia="0.00443333156 0.00443333156 0.0072"/>
         <geom mesh="base_0_2" material="black_2" class="visual_2"/>
         <geom mesh="base_1_2" material="jointgray_2" class="visual_2"/>

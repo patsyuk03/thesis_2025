@@ -5,47 +5,45 @@ import json
 import mujoco.viewer
 import numpy as np
 
+def get_joint_positions(data, step, recorded_path):
+    joint_positions = recorded_path[step]['position']
+    names = recorded_path[step]['name']
 
-JSON_PATH = os.path.join(os.path.expanduser("~"), "joint_states.json")
+    positions = dict()
+    for idx, name in enumerate(names):
+        positions[name] = joint_positions[idx]
+
+    data.qpos[:] = [
+        positions['arm_0_shoulder_pan_joint'],
+        positions['arm_0_shoulder_lift_joint'],
+        positions['arm_0_elbow_joint'],
+        positions['arm_0_wrist_1_joint'],
+        positions['arm_0_wrist_2_joint'],
+        positions['arm_0_wrist_3_joint'],
+    ]
+    return data
+
+
+JSON_PATH = os.path.join(os.path.expanduser("~"), "joint_states_arm_0.json")
 with open(JSON_PATH, "r") as f:
-    recorded_path = json.load(f)
+    recorded_path = list(reversed(json.load(f)))
 
-# Load your MuJoCo model
 model_path = f"{os.path.dirname(__file__)}/universal_robots_ur5e/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 
-initial_joint_positions = recorded_path[-1]['position']
-data.qpos[:] = initial_joint_positions
+data = get_joint_positions(data, 0, recorded_path)
 
-# model.opt.timestep = 0.0001
-
-# Initialize viewer
-viewer = mujoco.viewer.launch_passive(model, data)
-# viewer.user_scn.flags[mujoco.mjtRndFlag.mjRND_WIREFRAME] = 1
-renderer = mujoco.Renderer(model)
-
-# Play through each recorded joint state
-# tolerance = np.zeros(model.njnt)+0.1
-counter = 0
-for joint_position in reversed(recorded_path):
-    # target = joint_position['position']
-    data.ctrl[:] = joint_position['position'] 
-    # delta = np.absolute(data.qpos[:]-target)
-    # steps = 0
-    # while not (delta>tolerance).all():
-        # delta = data.qpos[:]-target
-    mujoco.mj_step(model, data)
-    counter+=1
-    if counter>20:
-        counter = 0
+with mujoco.viewer.launch_passive(model, data) as viewer:
+    viewer.cam.distance = 4
+    start = time.time()
+    step = 0
+    while viewer.is_running() and time.time() - start < 120:
+        data = get_joint_positions(data, step, recorded_path)
+        if step < len(recorded_path)-1:
+            step+=1
+        
+        mujoco.mj_step(model, data)
         viewer.sync()
-        # time.sleep(0.01) 
-        # steps += 1
-        # if steps>100:
-        #     print('Max steps')
-        #     break
-
-    # time.sleep(0.001) 
 
 print("Playback finished!")

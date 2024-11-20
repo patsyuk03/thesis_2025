@@ -4,28 +4,56 @@ import os
 import time
 import json
 
-JSON_PATH = os.path.join(os.path.expanduser("~"), "joint_states.json")
-with open(JSON_PATH, "r") as f:
-    recorded_path = list(reversed(json.load(f)))
+JSON_PATH_0 = os.path.join(os.path.expanduser("~"), "joint_states_arm_0.json")
+with open(JSON_PATH_0, "r") as f:
+    recorded_path_0 = list(reversed(json.load(f)))
+JSON_PATH_1 = os.path.join(os.path.expanduser("~"), "joint_states_arm_1.json")
+with open(JSON_PATH_1, "r") as f:
+    recorded_path_1 = list(reversed(json.load(f)))
+
+def get_joint_positions(data, step):
+    joint_positions = recorded_path_0[step]['position'] + recorded_path_1[step]['position']
+    names = recorded_path_0[step]['name'] + recorded_path_1[step]['name']
+
+    positions = dict()
+    for idx, name in enumerate(names):
+        positions[name] = joint_positions[idx]
+
+    data.qpos[:] = [
+        positions['arm_0_shoulder_pan_joint'],
+        positions['arm_0_shoulder_lift_joint'],
+        positions['arm_0_elbow_joint'],
+        positions['arm_0_wrist_1_joint'],
+        positions['arm_0_wrist_2_joint'],
+        positions['arm_0_wrist_3_joint'],
+        positions['arm_1_shoulder_pan_joint'],
+        positions['arm_1_shoulder_lift_joint'],
+        positions['arm_1_elbow_joint'],
+        positions['arm_1_wrist_1_joint'],
+        positions['arm_1_wrist_2_joint'],
+        positions['arm_1_wrist_3_joint'],
+    ]
+    return data
 
 model_path = f"{os.path.dirname(__file__)}/universal_robots_ur5e/dual_arm_scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 
-initial_joint_positions = recorded_path[1]['position']
-data.qpos[:6] = initial_joint_positions
-data.qpos[6:] = initial_joint_positions
+data = get_joint_positions(data, 0)
+
 
 with mujoco.viewer.launch_passive(model, data) as viewer:
-    viewer.cam.distance = 4  # Camera distance
+    viewer.cam.distance = 4
     start = time.time()
     step = 0
     while viewer.is_running() and time.time() - start < 120:
-        data.ctrl[:6] = recorded_path[step]['position'] 
-        data.ctrl[6:] = recorded_path[step]['position'] 
-        if step < len(recorded_path)-1:
+        
+        data = get_joint_positions(data, step)
+
+        if step < len(recorded_path_0)-1:
             step+=1
         
         mujoco.mj_step(model, data)
-        if step%20==0:
-            viewer.sync()
+        viewer.sync()
+        # if step%20==0:
+        #     viewer.sync()
