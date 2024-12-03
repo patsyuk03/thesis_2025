@@ -47,10 +47,10 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
     start = time.time()
     step = 0
     while viewer.is_running() and time.time() - start < 120:
-        
+
         data = get_joint_positions(data, step)
 
-        if step < len(recorded_path_0)-1:
+        if step < len(recorded_path_0)-2:
             step+=1
         
         mujoco.mj_step(model, data)
