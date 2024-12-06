@@ -2,7 +2,6 @@
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
 
   <option integrator="implicitfast"/>
-  <option cone="elliptic" impratio="10" />
 
   <default>
     <default class="ur5e_1">
@@ -76,8 +75,8 @@
 
   <worldbody>
     <light name="spotlight_1" mode="targetbodycom" target="wrist_2_link_1" pos="0 -1 2"/>
-    <!-- <body name="table_1" pos="0 0 0.4">
-      <geom name="table_geom_1" type="box" size="0.546 0.625 0.025" rgba="0.6 0.4 0.3 1"/> -->
+    <body name="table_1" pos="0 0 0.4">
+      <geom name="table_geom_1" type="box" size="0.546 0.625 0.025" rgba="0.6 0.4 0.3 1"/>
       <body name="base_1" quat="1 0 0 1" childclass="ur5e_1" pos="0.386 0 0.161">
         <inertial mass="4.0" pos="0 0 0" diaginertia="0.00443333156 0.00443333156 0.0072"/>
         <geom mesh="base_0_1" material="black_1" class="visual_1"/>
@@ -152,8 +151,19 @@
           </body>
         </body>
       </body>
-    <!-- </body> -->
+    </body>
   </worldbody>
+
+  <equality>
+    <joint joint1="hande_left_finger_joint" joint2="hande_right_finger_joint" polycoef="0 1 0 0 0" />
+  </equality>
+
+  <tendon>
+    <fixed name="split">
+      <joint joint="hande_left_finger_joint" coef="0.5" />
+      <joint joint="hande_right_finger_joint" coef="0.5" />
+    </fixed>
+  </tendon>
 
   <actuator>
     <general class="size3_1" name="shoulder_pan_1" joint="shoulder_pan_joint_1"/>
@@ -162,11 +172,14 @@
     <general class="size1_1" name="wrist_1_1" joint="wrist_1_joint_1"/>
     <general class="size1_1" name="wrist_2_1" joint="wrist_2_joint_1"/>
     <general class="size1_1" name="wrist_3_1" joint="wrist_3_joint_1"/>
+    <general name="hande_fingers_actuator" class="hande" tendon="split" ctrlrange="0 255"
+      forcerange="-200 200" gaintype="affine" biastype="affine" gainprm="0.00980392"
+      biasprm="0 -100 -10" />
   </actuator>
 
-  <keyframe>
-    <key name="home_1" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 0 0" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
-    <!-- <key name="home_1" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 -1.5708 -1.5708 1.5708 -1.5708 -1.5708 0" 
-        ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 -1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/> -->
-  </keyframe>
+  <!-- <keyframe>
+    <key name="home_1" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 0 0" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 0"/>
+    <key name="home_1" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 -1.5708 -1.5708 1.5708 -1.5708 -1.5708 0" 
+        ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0 -1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
+  </keyframe> -->
 </mujoco>

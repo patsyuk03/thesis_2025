@@ -19,13 +19,15 @@ def get_joint_positions(data, step):
     for idx, name in enumerate(names):
         positions[name] = joint_positions[idx]
 
-    data.qpos[:] = [
+    data.qpos[:6] = [
         positions['arm_0_shoulder_pan_joint'],
         positions['arm_0_shoulder_lift_joint'],
         positions['arm_0_elbow_joint'],
         positions['arm_0_wrist_1_joint'],
         positions['arm_0_wrist_2_joint'],
         positions['arm_0_wrist_3_joint'],
+    ]
+    data.qpos[8:14] = [
         positions['arm_1_shoulder_pan_joint'],
         positions['arm_1_shoulder_lift_joint'],
         positions['arm_1_elbow_joint'],
@@ -35,9 +37,11 @@ def get_joint_positions(data, step):
     ]
     return data
 
-model_path = f"{os.path.dirname(__file__)}/universal_robots_ur5e/dual_arm_scene.xml" 
+model_path = f"{os.path.dirname(__file__)}/universal_robots_ur5e/dual_arm_gripper_scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
+
+# joint_names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(model.njnt)]
 
 data = get_joint_positions(data, 0)
 
