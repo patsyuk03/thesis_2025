@@ -1,5 +1,6 @@
 <mujoco model="ur5e scene">
-  <include file="ur5e.xml"/>
+  <!-- <include file="ur5e.xml"/> -->
+  <include file="ur5e_1_robotiq_hande.xml"/>
 
   <statistic center="0.3 0 0.4" extent="0.8"/>
 

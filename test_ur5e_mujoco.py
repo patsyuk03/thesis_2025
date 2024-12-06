@@ -20,6 +20,8 @@ def get_joint_positions(data, step, recorded_path):
         positions['arm_0_wrist_1_joint'],
         positions['arm_0_wrist_2_joint'],
         positions['arm_0_wrist_3_joint'],
+        0,
+        0
     ]
     return data
 
