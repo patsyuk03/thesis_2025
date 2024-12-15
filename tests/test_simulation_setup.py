@@ -4,7 +4,7 @@ import os
 import time
 
 
-model_path = f"{os.path.dirname(__file__)}/universal_robots_ur5e/dual_arm_gripper_scene.xml" 
+model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
 

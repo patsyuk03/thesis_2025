@@ -1,6 +1,6 @@
 <mujoco model="ur5e scene">
   <!-- <include file="ur5e.xml"/> -->
-  <include file="ur5e_2_robotiq_2f85.xml"/>
+  <include file="ur5e_1_robotiq_hande.xml"/>
 
   <statistic center="0.3 0 0.4" extent="0.8"/>
 
@@ -20,5 +20,6 @@
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <include file="object.xml" />
   </worldbody>
 </mujoco>
