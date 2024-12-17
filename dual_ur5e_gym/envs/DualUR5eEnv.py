@@ -47,10 +47,9 @@ class DualUR5eEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         # self.render = render
 
     def step(self, action):
-        # Step the environment
         self.do_simulation(action, self.frame_skip)
         obs = self._get_obs()
-        reward = 1.0  # Placeholder reward
+        reward = 1.0  
         terminated = False
         truncated = False
         info = {}
