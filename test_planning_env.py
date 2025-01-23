@@ -5,7 +5,7 @@ import time
 from multiprocessing import Process, Queue
 
 
-TIMEOUT = 1
+TIMEOUT = 30
 NUM_JOINTS = 7
 NUM_SAMPLES = 10
 
@@ -137,11 +137,11 @@ class MujocoPlanner:
 
 
 def main():
-    num_envs = 5
+    num_envs = 3
     processes = []
     output_queue = Queue()
     for i in range(num_envs):
-        process = Process(target=MujocoPlanner, args=(i, output_queue, False, True))
+        process = Process(target=MujocoPlanner, args=(i, output_queue, True, True))
         processes.append(process)
         process.start()
 
@@ -152,14 +152,14 @@ def main():
 
     print(results)
 
-    vels = [result['vel'] for result in results]    
-    # vels = [[ 1.14472371,  0.90159072,  0.50249434,  0.90085595, -0.68372786,
-    #    -0.12289023,  0.], [ 1.76405235,  0.40015721,  0.97873798,  2.2408932 ,  1.86755799,
-    #    -0.97727788,  0.        ], [0, 0, 0, 0, 0, 0, 0]]
+    # vels = [result['vel'] for result in results]    
+    # # vels = [[ 1.14472371,  0.90159072,  0.50249434,  0.90085595, -0.68372786,
+    # #    -0.12289023,  0.], [ 1.76405235,  0.40015721,  0.97873798,  2.2408932 ,  1.86755799,
+    # #    -0.97727788,  0.        ], [0, 0, 0, 0, 0, 0, 0]]
 
-    mp = MujocoPlanner()
-    mp.vel = vels
-    mp.run_visualisation()
+    # mp = MujocoPlanner()
+    # mp.vel = vels
+    # mp.run_visualisation()
 
     print("Done.")
 
