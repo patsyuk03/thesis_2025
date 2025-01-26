@@ -29,6 +29,7 @@ class MujocoPlanner:
         self.start = time.time()
 
         self.target_position = list(self.data.xpos[self.model.body(name="object_0").id])
+        print(self.target_position)
         self.target_position[0] += 0.2
 
         self.vel = self.sample_joint_velocities(NUM_JOINTS, NUM_SAMPLES)

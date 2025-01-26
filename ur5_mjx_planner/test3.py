@@ -54,15 +54,15 @@ def main():
                 act=jp.array(d.act),
                 xfrc_applied=jp.array(d.xfrc_applied),
             )
-            dx = dx.replace(
-                qpos=jp.array(d.qpos), qvel=jp.array(d.qvel), time=jp.array(d.time)
-            ) 
-            mx = mx.tree_replace({
-                'opt.gravity': m.opt.gravity,
-                'opt.tolerance': m.opt.tolerance,
-                'opt.ls_tolerance': m.opt.ls_tolerance,
-                'opt.timestep': m.opt.timestep,
-            })
+            # dx = dx.replace(
+            #     qpos=jp.array(d.qpos), qvel=jp.array(d.qvel), time=jp.array(d.time)
+            # ) 
+            # mx = mx.tree_replace({
+            #     'opt.gravity': m.opt.gravity,
+            #     'opt.tolerance': m.opt.tolerance,
+            #     'opt.ls_tolerance': m.opt.ls_tolerance,
+            #     'opt.timestep': m.opt.timestep,
+            # })
 
             if _VIEWER_GLOBAL_STATE['running']:
                 dx = step_fn(mx, dx)
