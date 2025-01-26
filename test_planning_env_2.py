@@ -8,7 +8,7 @@ from multiprocessing import Process, Queue
 TIMEOUT = 30
 NUM_JOINTS = 7
 NUM_STEPS = 1000
-NUM_SAMPLES = 10
+NUM_SAMPLES = 50
 
 class MujocoPlanner:
     def __init__(self, seed, mean, std, output_queue=None, visualize=False, run_simulation=False):
@@ -143,12 +143,12 @@ class MujocoPlanner:
 
 
 def main():
-    mean = np.zeros(NUM_JOINTS)
+    mean = np.ones(NUM_JOINTS)
     std = np.ones(NUM_JOINTS)
 
 
-    for batch in range(3):
-        num_envs = 2
+    for batch in range(10):
+        num_envs = 10
         processes = []
         output_queue =  Queue()
         for i in range(num_envs):

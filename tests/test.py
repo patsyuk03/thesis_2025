@@ -1,6 +1,10 @@
-import numpy as np
+import jax.numpy as jnp
+from jax import vmap
 
-# print(np.arange(1, 3+1))
-# print(np.arange(3))
+def f(x, y):
+    return x.sum() + y.sum()
 
-print(np.random.normal(0, 1, (3, 7)))
+xs = [1,2,3]
+ys = jnp.array([[1,2,3],[1,2,3],[1,2,3]])
+out = vmap(f, in_axes=(0,0))(xs, ys)
+print(out)
