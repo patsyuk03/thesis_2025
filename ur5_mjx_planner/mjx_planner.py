@@ -3,11 +3,12 @@ import mujoco.mjx as mjx
 import mujoco
 import cv2
 import jax
+from jax import numpy as jnp
 import numpy as np
 import time
 
 class MJXPlanner:
-    def __init__(self, model_path, n_batch=3, n_envs=1, n_samples=10, n_steps=1000, visualize=False):
+    def __init__(self, model_path, n_batch=3, n_samples=3, n_steps=500, visualize=False):
         print("Initializing planner...")
 
         self.model_path = model_path
@@ -16,9 +17,9 @@ class MJXPlanner:
         self.model = mujoco.MjModel.from_xml_path(self.model_path)
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model)
+        # self.renderers = [self.renderer]*3
 
         self.n_batch = n_batch #Number of times mean and std is updated
-        self.n_envs = n_envs #Number of parallel environments pre batch
         self.n_samples = n_samples #Number of sample trajectories per environment
         self.n_steps = n_steps #Number of steps per trajectory
         self.n_joints = self.model.nu #Number of joints
@@ -28,7 +29,6 @@ class MJXPlanner:
 
         self.mean = np.zeros(self.n_joints)
         self.std = np.ones(self.n_joints)
-        self.samples = self.generate_samples()
 
         self.target_position = self.model.body(name="object_0").pos
         print("Position of the object:", self.target_position)
@@ -38,62 +38,86 @@ class MJXPlanner:
         self.jit_step = jax.jit(mjx.step)
         print(f'Compilation took {time.time() - start}s.')
 
-        camera = mujoco.MjvCamera() 
-        camera.lookat[:] = [0.0, 0.0, 0.0]
-        camera.distance = 3.0  
+        self.camera = mujoco.MjvCamera() 
+        self.camera.lookat[:] = [0.0, 0.0, 0.0]
+        self.camera.distance = 3.0  
 
-        self.prev_time = self.data.time
-        while self.visualize:
-            self.visualization(camera)
+        # self.prev_time = self.data.time
+        # while self.visualize:
+        #     self.visualization(camera)
 
     def generate_samples(self):
-
-        samples = np.empty((self.n_samples, self.n_steps, self.n_joints), float)
+        samples = np.zeros((self.n_samples, self.n_steps, self.n_joints), float)
         for trajectory in range(self.n_samples):
             samples[trajectory] = np.random.normal(self.mean, self.std, (self.n_steps, self.n_joints))
         samples[:,:,-1] = 0
+        return jnp.array(samples)
 
     def single_trajectory_cost(self, trajectory, data):
-        temp_data = mjx.put_data(self.model, data)
+        temp_mjx_data = mjx.put_data(self.model, data)
         total_cost = 0.0
-        for t in range(self.n_steps):
-            # Apply control
-            temp_data.ctrl[:] = trajectory[t]
-            # Step the simulation
-            temp_data = self.jit_step(self.mjx_model, temp_data)
-            # Compute cost as distance to the target
-            current_position = self.data.xpos[self.model.body(name="hande").id]
-            total_cost += jax.numpy.linalg.norm(self.target_position - current_position)
+        for idx, step in enumerate(trajectory):
+            qvel = temp_mjx_data.qvel.at[:self.n_joints].set(step)
+            temp_mjx_data = temp_mjx_data.replace(qvel=qvel)
+            temp_mjx_data = self.jit_step(self.mjx_model, temp_mjx_data)
+            current_position = temp_mjx_data.xpos[self.model.body(name="hande").id]
+            total_cost += jnp.linalg.norm(self.target_position - current_position)
+            if self.visualize and idx>1:
+                # print(total_cost.shape, total_cost)
+                # print(temp_mjx_data.shape)
+                self.visualization(temp_mjx_data)
+
+            if idx%100 == 0:
+                print(f"Total cost at step #{idx}: {total_cost}")
+                print("Current pose",current_position)
         return total_cost
 
     def evaluate_batch(self, batch_trajectories):
-        costs = jax.vmap(self.single_trajectory_cost, in_axes=(0, None))(batch_trajectories, self.mjx_data)
+        costs = jax.vmap(self.single_trajectory_cost, in_axes=(0, None))(batch_trajectories, self.data)
         return np.array(costs)
 
 
     def optimizer(self):
         for batch in range(self.n_batch):
-            # Step 1: Generate samples
             samples = self.generate_samples()
 
-            # Step 2: Evaluate the cost of each trajectory in parallel
             costs = self.evaluate_batch(samples)
+            
+            elite_idxs = np.argsort(costs)[:self.n_samples // 2]
+            elite_samples = samples[elite_idxs]
 
-    def visualization(self, camera, fps=60):
-        mujoco.mj_step(self.model, self.data)
-        self.mjx_data = self.jit_step(self.mjx_model, self.mjx_data)
-        if self.mjx_data.time - self.prev_time >= 1/fps:
-            self.prev_time = self.data.time
-            self.data = mjx.get_data(self.model, self.mjx_data)
-            self.renderer.update_scene(self.data, camera=camera)
+            self.mean = np.mean(elite_samples, axis=0)
+            self.std = np.std(elite_samples, axis=0)
 
-            image = self.renderer.render()
+            print(f"Batch {batch + 1}/{self.n_batch}: Mean cost = {np.mean(costs):.4f}")
 
-            cv2.imshow(f"Result", image)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                self.visualize = False
-                cv2.destroyAllWindows()
+    def visualization(self, traced_data):
+        # if self.mjx_data.time - self.prev_time >= 1/fps:
+        #     self.prev_time = self.data.time
+
+        # print(mjx_data)
+
+        # datas = jax.vmap(lambda _data: mjx.get_data(self.model, _data))(mjx_data)
+
+
+        # image = self.renderer.render()
+        # for idx, data in enumerate(datas):
+        #     self.renderer.update_scene(data, camera=self.camera)
+        #     temp_image = self.renderer.render()
+        #     image = np.concatenate((image, temp_image), axis=1)
+
+        mjx_data = jax.lax.stop_gradient(traced_data)
+
+        data = mjx.get_data(self.model, mjx_data)
+        self.renderer.update_scene(data, camera=self.camera)
+        image = self.renderer.render()
+
+
+        cv2.imshow(f"Result", image)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
+            self.visualize = False
+            cv2.destroyAllWindows()
 
         
 
@@ -106,6 +130,7 @@ class MJXPlanner:
 def main():
     model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
     mp = MJXPlanner(model_path, visualize=True)
+    mp.optimizer()
 
 
 

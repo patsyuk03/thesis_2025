@@ -67,6 +67,9 @@ def main():
             if _VIEWER_GLOBAL_STATE['running']:
                 dx = step_fn(mx, dx)
 
+            current_position = dx.xpos[m.body(name="hande").id]
+            print(current_position)
+
 
             mjx.get_data_into(d, m, dx)
             viewer.sync()
