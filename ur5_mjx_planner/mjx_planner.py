@@ -17,7 +17,6 @@ class MJXPlanner:
         self.model = mujoco.MjModel.from_xml_path(self.model_path)
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model)
-        # self.renderers = [self.renderer]*3
 
         self.n_batch = n_batch #Number of times mean and std is updated
         self.n_samples = n_samples #Number of sample trajectories per environment
@@ -133,27 +132,22 @@ class MJXPlanner:
 
         return traj
 
-        
-
-
-
-
-
-
 
 def main():
     model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
-    mp = MJXPlanner(model_path, n_batch=10, n_samples=10, n_steps=500, visualize=False)
+    mp = MJXPlanner(model_path, n_batch=100, n_samples=10, n_steps=500, visualize=True)
 
     # mean = [0.57053006,  0.1621206,  -0.00401804, -0.01125557, -0.00737564, -0.20637755, 0. ]
     # std = [1.0005847,  1.0102792,  0.9040343,  0.9934344,  0.96778953, 1.0823556, 0. ]
-    # mp.run_trajectory(mean=mean, std=std)
+    mean = [1.939485,    0.53497046,  0.35734025,  0.60128725, -0.5419982,  -0.1699366, 0. ]
+    std = [0.81699705, 0.95854604, 1.2487191,  0.9681563,  1.1003195,  0.6305805, 0. ]
+    mp.run_trajectory(mean=mean, std=std)
 
-    cost_list = mp.optimizer()
-    file_path = f"{os.path.dirname(__file__)}/costs.txt" 
-    with open(file_path, 'w') as file:
-        for cost in cost_list:
-            file.write(f'{cost}\n')
+    # cost_list = mp.optimizer()
+    # file_path = f"{os.path.dirname(__file__)}/costs1.txt" 
+    # with open(file_path, 'w') as file:
+    #     for cost in cost_list:
+    #         file.write(f'{cost}\n')
 
 
 
