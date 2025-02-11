@@ -1,3 +1,6 @@
 # thesis_2025
 
-source ~/pytorch_env/pytorch_env/bin/activate
+python -m venv ~/thesis_env
+source ~/thesis_env/bin/activate
+pip install mujoco-mjx
+pip install --upgrade "jax[cuda12]"
