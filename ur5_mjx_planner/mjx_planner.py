@@ -6,6 +6,8 @@ import jax
 from jax import numpy as jnp
 import numpy as np
 import time
+from functools import partial
+
 
 class MJXPlanner:
     def __init__(self, model_path, n_batch=3, n_samples=10, n_steps=100, visualize=False):
@@ -23,13 +25,13 @@ class MJXPlanner:
         self.n_steps = n_steps #Number of steps per trajectory
         self.n_joints = self.model.nu #Number of joints
 
-        self.mjx_model = mjx.put_model(self.model)
-        self.mjx_data = mjx.put_data(self.model, self.data)
+        self.mjx_model = jax.device_put(mjx.put_model(self.model), jax.devices("gpu")[0])
+        self.mjx_data = jax.device_put(mjx.put_data(self.model, self.data), jax.devices("gpu")[0])
 
         self.mean = np.zeros(self.n_joints)
         self.std = np.ones(self.n_joints)
 
-        self.target_position = self.model.body(name="object_0").pos
+        self.target_position = jax.device_put(self.model.body(name="object_0").pos, jax.devices("gpu")[0])
         position = self.model.body(name="hande").pos
         print("Position of the object:", self.target_position)
         print("hende position", position)
@@ -53,8 +55,10 @@ class MJXPlanner:
         for trajectory in range(self.n_samples):
             samples[trajectory] = np.random.normal(self.mean, self.std, (self.n_steps, self.n_joints))
         samples[:,:,-1] = 0
-        return jnp.array(samples)
+        return jax.device_put(jnp.array(samples), jax.devices("gpu")[0])
 
+    # @jax.jit(static_argnums=('self',))
+    @partial(jax.jit, static_argnums=(0,2))
     def single_trajectory_cost(self, trajectory, data):
         temp_mjx_data = mjx.put_data(self.model, data)
         # current_position = temp_mjx_data.xpos[self.model.body(name="hande").id]
@@ -79,7 +83,7 @@ class MJXPlanner:
 
     def evaluate_batch(self, batch_trajectories):
         costs = jax.vmap(self.single_trajectory_cost, in_axes=(0, None))(batch_trajectories, self.data)
-        return np.array(costs)
+        return jax.device_put(np.array(costs), jax.devices("gpu")[0])
 
 
     def optimizer(self):
@@ -162,7 +166,7 @@ def main():
     with open(file_path, 'w') as file:
         file.write(mp.print_info())
         file.write(f'Run took: {dtime/60} min\n\n')
-        ile.write(f'COSTS')
+        file.write(f'COSTS\n')
         for cost in cost_list:
             file.write(f'{cost}\n')
 
