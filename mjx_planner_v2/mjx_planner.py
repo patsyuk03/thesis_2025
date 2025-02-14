@@ -19,8 +19,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 5
-		self.num = 50
+		self.t_fin = 2
+		self.num = 2000
 
 		self.t = self.t_fin/self.num
 		
@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 1
+		self.maxiter_cem = 3
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -80,19 +80,15 @@ class cem_planner():
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
-		self.model.opt.timestep = 0.1
-		# self.mjx_model = mjx.load_model_from_path(model_path)
-		# self.data = mujoco.MjData(self.model)
-		# jax.config.update('jax_enable_x64', True)
+
+		self.mjx_model = mjx.put_model(self.model)
+		print("Timestep", self.mjx_model.opt.timestep)
 
 		print(f'Default backend: {jax.default_backend()}')
 		print('JIT-compiling the model physics step...')
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
 		print(f'Compilation took {time.time() - start}s.')
-		self.mjx_model = mjx.put_model(self.model)
-		print("timestep", self.mjx_model.opt.timestep)
-		# mjx_data = mjx.put_data(self.model, self.data)
 		  
 		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
   
@@ -157,51 +153,19 @@ class cem_planner():
 		return primal_sol
 
 	@partial(jit, static_argnums=(0,))
-	def mjx_step(self, init_state, thetadot_single):
-		mjx_data = mjx.make_data(self.model)
-		qpos = mjx_data.qpos.at[:self.num_dof].set(init_state[0])
+	def mjx_step(self, mjx_data, thetadot_single):
 		qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single)
-		mjx_data = mjx_data.replace(qvel=qvel, qpos=qpos)
+		mjx_data = mjx_data.replace(qvel=qvel)
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
-		new_state = (jnp.array(mjx_data.qpos[:self.num_dof]), jnp.array(mjx_data.qvel[:self.num_dof]))
-		return new_state, new_state
+		theta = jnp.array(mjx_data.qpos[:self.num_dof])
+		return mjx_data, theta
 
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
-		print("thetadot inside", thetadot)
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
-		print("thetadot_SINGLE inside", thetadot_single)
-		# mjx_model = mjx.put_model(self.model)
 		mjx_data = mjx.make_data(self.model)
-
-		qpos = jnp.array(mjx_data.qpos[:self.num_dof])
-		qvel = jnp.array(mjx_data.qvel[:self.num_dof])
-		init_state = (qpos, qvel)
-     
-		theta = jnp.zeros((self.num_dof, self.num)) #theta=joint_states, num=steps
-		theta_init = mjx_data.qpos[:self.num_dof]
-		theta = theta.at[:, 0].set(theta_init)
-		print("test")
-		print(thetadot_single.shape)
-		final_state, trajectory = jax.lax.scan(self.mjx_step, init_state, thetadot_single.T, length=self.num)
-		print(trajectory)
-
-
-
-
-
-		# for i in range(0, self.num-1):
-		# 	qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single[:, i])
-		# 	mjx_data = mjx_data.replace(qvel=qvel)
-		# 	mjx_data = self.jit_step(mjx_model, mjx_data)
-		# 	theta_vec = mjx_data.qpos[:self.num_dof]
-		# 	theta = theta.at[:, i+1].set(theta_vec)
-			# print(jax.debug.print("debug: {}", theta))
-			# print(i)
-
-		# print(theta.shape)
-			
-		return trajectory[0].T.flatten()
+		_, theta = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
+		return theta.T.flatten()
     
 
 	# @partial(jit, static_argnums=(0,))
@@ -216,30 +180,25 @@ class cem_planner():
 	
 		for i in range(0, self.maxiter_cem):
 			
-			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov )
-			## xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
-			xi_filtered = self.compute_projection_filter(xi_samples, state_term )
+			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov ) # xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
+			xi_filtered = self.compute_projection_filter(xi_samples, state_term ) 
 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
-			# theta = self.compute_rollout_batch(thetadot) ### mjx
-			# thetadot_single = thetadot[0].reshape(self.num_dof, self.num)
-			# theta = self.compute_rollout_single(thetadot[0])
 			compute_rollout_batch = (vmap(self.compute_rollout_single, in_axes = (0)))
-			print("thetadot outside",thetadot.shape)
-			theta_batch = compute_rollout_batch(thetadot)
+			time_start = time.time()
+			theta = compute_rollout_batch(thetadot)
+			dt = time.time() - time_start
+			print(f"Execution time: {dt} s")
 
-			print("theta_batch", theta_batch.shape)
-
-			np.savetxt('output_1.csv',theta_batch,delimiter=",")
-			
-			### theta should be a matrix of batch times(self.num_dof*self.num)
+			theta_single = theta[0].reshape(self.num_dof, self.num).T
+			plt.plot(theta_single)
+			plt.savefig('single_traj.png')
 
    
-			### thetadot is matrix of batch times(self.num_dof*self.num)
-   
-			# theta_single = theta_batch[0].reshape(self.num_dof, self.num)
-			# plt.plot(theta.T)
-			# plt.show()
+			for i in range(theta.shape[0]):
+				theta_single = theta[i].reshape(self.num_dof, self.num).T
+				plt.plot(theta_single)
+			plt.savefig('trajectories_1.png')
 
 			# cost_batch = self.compute_cost
   
@@ -247,7 +206,7 @@ class cem_planner():
 		return 0
 	
 def main():
-	num_dof = 7
+	num_dof = 6
 	num_batch = 100
 	opt_class =  cem_planner(num_dof, num_batch)
 	theta_init = np.zeros((num_batch, num_dof))
