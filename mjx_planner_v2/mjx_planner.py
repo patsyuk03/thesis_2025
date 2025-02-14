@@ -80,6 +80,7 @@ class cem_planner():
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
+		self.model.opt.timestep = 0.004
 		# self.mjx_model = mjx.load_model_from_path(model_path)
 		# self.data = mujoco.MjData(self.model)
 		# jax.config.update('jax_enable_x64', True)
@@ -90,6 +91,7 @@ class cem_planner():
 		self.jit_step = jax.jit(mjx.step)
 		print(f'Compilation took {time.time() - start}s.')
 		self.mjx_model = mjx.put_model(self.model)
+		print("timestep", self.mjx_model.opt.timestep)
 		# mjx_data = mjx.put_data(self.model, self.data)
 		  
 		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
@@ -228,7 +230,7 @@ class cem_planner():
 
 			print("theta_batch", theta_batch.shape)
 
-			np.savetxt('output.csv',theta_batch,delimiter=",")
+			np.savetxt('output_04.csv',theta_batch,delimiter=",")
 			
 			### theta should be a matrix of batch times(self.num_dof*self.num)
 
