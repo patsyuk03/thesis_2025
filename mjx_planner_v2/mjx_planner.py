@@ -19,8 +19,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 2
-		self.num = 2000
+		self.t_fin = 5
+		self.num = 500
 
 		self.t = self.t_fin/self.num
 		
@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 3
+		self.maxiter_cem = 1
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -80,6 +80,7 @@ class cem_planner():
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
+		self.model.opt.timestep = 0.01
 
 		self.mjx_model = mjx.put_model(self.model)
 		print("Timestep", self.mjx_model.opt.timestep)
@@ -191,8 +192,14 @@ class cem_planner():
 			print(f"Execution time: {dt} s")
 
 			theta_single = theta[0].reshape(self.num_dof, self.num).T
+
+			np.savetxt('output_vels.csv',thetadot[0].reshape(self.num_dof, self.num).T, delimiter=",")
+			np.savetxt('output_traj.csv',theta[0].reshape(self.num_dof, self.num).T ,delimiter=",")
+			
 			plt.plot(theta_single)
+			plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
 			plt.savefig('single_traj.png')
+			plt.clf()
 
    
 			for i in range(theta.shape[0]):
@@ -207,7 +214,7 @@ class cem_planner():
 	
 def main():
 	num_dof = 6
-	num_batch = 100
+	num_batch = 1
 	opt_class =  cem_planner(num_dof, num_batch)
 	theta_init = np.zeros((num_batch, num_dof))
 	thetadot_init = np.zeros((num_batch, num_dof  ))
