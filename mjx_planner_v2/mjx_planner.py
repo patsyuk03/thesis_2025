@@ -176,7 +176,7 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
-		w1 = 0.5
+		w1 = 0.99
 		w2 = 1-w1
 		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
 		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
