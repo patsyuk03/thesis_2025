@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 1
+		self.maxiter_cem = 10
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -90,6 +90,9 @@ class cem_planner():
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
 		print(f'Compilation took {time.time() - start}s.')
+
+		self.target_pos = np.tile(self.model.body(name="object_0").pos, (self.num, 1))
+		print(f'Target position: {self.target_pos[0]}')
 		  
 		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
   
@@ -159,14 +162,35 @@ class cem_planner():
 		mjx_data = mjx_data.replace(qvel=qvel)
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
-		return mjx_data, theta
+		current_position = mjx_data.xpos[self.model.body(name="hande").id]
+		eef_pos = jnp.array(current_position)
+		return mjx_data, (theta, eef_pos)
 
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
 		mjx_data = mjx.make_data(self.model)
-		_, theta = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
-		return theta.T.flatten()
+		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
+		theta, eef_pos = out
+		return theta.T.flatten(), eef_pos
+	
+	@partial(jit, static_argnums=(0,))
+	def compute_cost_single(self, eef_pos):
+		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
+		# print("cost g", cost_g)
+		return cost_g
+	
+	@partial(jit, static_argnums=(0, ))
+	def compute_ellite_samples(self, cost_batch, xi_filtered):
+		idx_ellite = jnp.argsort(cost_batch)
+		xi_ellite = xi_filtered[idx_ellite[0:self.ellite_num]]
+		return xi_ellite, idx_ellite
+	
+	@partial(jit, static_argnums=(0,))
+	def compute_mean_cov(self, xi_ellite):
+		xi_mean = jnp.mean(xi_ellite, axis = 0)
+		xi_cov = jnp.cov(xi_ellite.T)
+		return xi_mean, xi_cov
     
 
 	# @partial(jit, static_argnums=(0,))
@@ -178,43 +202,54 @@ class cem_planner():
   
 		key, subkey = random.split(self.key)
   
-	
+		time_start = time.time()
 		for i in range(0, self.maxiter_cem):
 			
 			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov ) # xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
 			xi_filtered = self.compute_projection_filter(xi_samples, state_term ) 
 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
-			compute_rollout_batch = (vmap(self.compute_rollout_single, in_axes = (0)))
+
+			compute_rollout_batch = vmap(self.compute_rollout_single, in_axes = (0))
+			theta, eef_pos = compute_rollout_batch(thetadot)
+
+			compute_cost_batch = vmap(self.compute_cost_single, in_axes = (0))
+			cost_batch = compute_cost_batch(eef_pos)
+
+			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
+			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
+			res.append(jnp.min(cost_batch))
+
+			print(f"Iter #{i+1}: {round(time.time() - time_start, 2)}s")
 			time_start = time.time()
-			theta = compute_rollout_batch(thetadot)
-			dt = time.time() - time_start
-			print(f"Execution time: {dt} s")
 
-			theta_single = theta[0].reshape(self.num_dof, self.num).T
+			# theta_single = theta[0].reshape(self.num_dof, self.num).T
 
-			np.savetxt('output_vels.csv',thetadot[0].reshape(self.num_dof, self.num).T, delimiter=",")
-			np.savetxt('output_traj.csv',theta[0].reshape(self.num_dof, self.num).T ,delimiter=",")
+			# np.savetxt('output_vels.csv',thetadot[0].reshape(self.num_dof, self.num).T, delimiter=",")
+			# np.savetxt('output_traj.csv',theta[0].reshape(self.num_dof, self.num).T ,delimiter=",")
 			
-			plt.plot(theta_single)
-			plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
-			plt.savefig('single_traj.png')
-			plt.clf()
+			# plt.plot(theta_single)
+			# plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
+			# plt.savefig('single_traj.png')
+			# plt.clf()
 
    
-			for i in range(theta.shape[0]):
-				theta_single = theta[i].reshape(self.num_dof, self.num).T
-				plt.plot(theta_single)
-			plt.savefig('trajectories_1.png')
+			# for i in range(theta.shape[0]):
+			# 	theta_single = theta[i].reshape(self.num_dof, self.num).T
+			# 	plt.plot(theta_single)
+			# plt.savefig('trajectories_1.png')
 
 			# cost_batch = self.compute_cost
+
+		print(res)
+		np.savetxt('outputcosts.csv',res, delimiter=",")
   
   	
 		return 0
 	
 def main():
 	num_dof = 6
-	num_batch = 1
+	num_batch = 500
 	opt_class =  cem_planner(num_dof, num_batch)
 	theta_init = np.zeros((num_batch, num_dof))
 	thetadot_init = np.zeros((num_batch, num_dof  ))
@@ -223,7 +258,9 @@ def main():
 	thetaddot_fin = np.zeros((num_batch, num_dof  ))
 	state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
 	state_term = jnp.asarray(state_term)
+	start_time = time.time()
 	temp = opt_class.compute_cem(theta_init, state_term)
+	print(f"Total time: {round(time.time()-start_time, 2)}s")
 	
 	
 if __name__ == "__main__":
