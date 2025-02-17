@@ -176,7 +176,7 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
-		w1 = 0.01
+		w1 = 0.5
 		w2 = 1-w1
 		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
 		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
@@ -251,6 +251,11 @@ class cem_planner():
 		idx_min = jnp.argmin(cost_batch)
 		thetadot_best = thetadot[idx_min].reshape((self.num_dof, self.num))
 		np.savetxt('best_vels.csv',thetadot_best, delimiter=",")
+
+		theta_single = theta[idx_min].reshape(self.num_dof, self.num).T
+		plt.plot(theta_single)
+		plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
+		plt.savefig('best_traj.png')
   
   	
 		return 0
