@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 10
+		self.maxiter_cem = 20
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -175,10 +175,14 @@ class cem_planner():
 		return theta.T.flatten(), eef_pos
 	
 	@partial(jit, static_argnums=(0,))
-	def compute_cost_single(self, eef_pos):
+	def compute_cost_single(self, eef_pos, thetadot):
+		w1 = 0.01
+		w2 = 1-w1
 		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
-		# print("cost g", cost_g)
-		return cost_g
+		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
+		# print(cost_s.shape)
+		cost = w1*cost_g + w2*cost_s
+		return cost
 	
 	@partial(jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
@@ -214,7 +218,7 @@ class cem_planner():
 			theta, eef_pos = compute_rollout_batch(thetadot)
 
 			compute_cost_batch = vmap(self.compute_cost_single, in_axes = (0))
-			cost_batch = compute_cost_batch(eef_pos)
+			cost_batch = compute_cost_batch(eef_pos, thetadot)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
@@ -242,7 +246,11 @@ class cem_planner():
 			# cost_batch = self.compute_cost
 
 		print(res)
-		np.savetxt('outputcosts.csv',res, delimiter=",")
+		np.savetxt('output_costs1.csv',res, delimiter=",")
+
+		idx_min = jnp.argmin(cost_batch)
+		thetadot_best = thetadot[idx_min].reshape((self.num_dof, self.num))
+		np.savetxt('best_vels.csv',thetadot_best, delimiter=",")
   
   	
 		return 0
