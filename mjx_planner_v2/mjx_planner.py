@@ -179,10 +179,9 @@ class cem_planner():
 		w1 = 0.99
 		w2 = 1-w1
 		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
-		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
-		# print(cost_s.shape)
-		cost = w1*cost_g + w2*cost_s
-		return cost
+		# cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
+		# cost = w1*cost_g + w2*cost_s
+		return cost_g
 	
 	@partial(jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
