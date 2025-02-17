@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 20
+		self.maxiter_cem = 10
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -176,12 +176,12 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
-		w1 = 0.99
+		w1 = 0.999
 		w2 = 1-w1
-		cost_g = np.min(jnp.linalg.norm(eef_pos - self.target_pos, axis=1))
-		# cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
-		# cost = w1*cost_g + w2*cost_s
-		return cost_g
+		cost_g = jnp.linalg.norm(eef_pos - self.target_pos)
+		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
+		cost = w1*cost_g + w2*cost_s
+		return cost
 	
 	@partial(jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
@@ -261,7 +261,7 @@ class cem_planner():
 	
 def main():
 	num_dof = 6
-	num_batch = 500
+	num_batch = 100
 	opt_class =  cem_planner(num_dof, num_batch)
 	theta_init = np.zeros((num_batch, num_dof))
 	thetadot_init = np.zeros((num_batch, num_dof  ))
