@@ -176,7 +176,7 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
-		w1 = 0.999
+		w1 = 0.99
 		w2 = 1-w1
 		weights = jnp.linspace(0, 1, self.num)
 
