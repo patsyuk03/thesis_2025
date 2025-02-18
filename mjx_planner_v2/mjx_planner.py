@@ -271,7 +271,8 @@ def main():
 	num_dof = 6
 	num_batch = 500
 	opt_class =  cem_planner(num_dof, num_batch)
-	theta_init = np.zeros((num_batch, num_dof))
+	# theta_init = np.zeros((num_batch, num_dof))
+	theta_init = np.tile([1.5, -1.8, 1.75, -1.25, -1.6, 0], (num_batch, 1))
 	thetadot_init = np.zeros((num_batch, num_dof  ))
 	thetaddot_init = np.zeros((num_batch, num_dof  ))
 	thetadot_fin = np.zeros((num_batch, num_dof  ))
