@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 10
+		self.maxiter_cem = 30
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -179,7 +179,7 @@ class cem_planner():
 		w1 = 0.999
 		w2 = 1-w1
 		cost_g = jnp.linalg.norm(eef_pos - self.target_pos)
-		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num).T, axis=1))
+		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 		cost = w1*cost_g + w2*cost_s
 		return cost
 	
@@ -261,7 +261,7 @@ class cem_planner():
 	
 def main():
 	num_dof = 6
-	num_batch = 100
+	num_batch = 500
 	opt_class =  cem_planner(num_dof, num_batch)
 	theta_init = np.zeros((num_batch, num_dof))
 	thetadot_init = np.zeros((num_batch, num_dof  ))
