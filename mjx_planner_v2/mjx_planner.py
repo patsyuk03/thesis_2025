@@ -19,8 +19,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 2
-		self.num = 200
+		self.t_fin = 1
+		self.num = 100
 
 		self.t = self.t_fin/self.num
 		
@@ -183,10 +183,10 @@ class cem_planner():
 	def compute_cost_single(self, eef_pos, thetadot):
 		w1 = 1
 		w2 = 0.005
-		w3 = 0.13
+		w3 = 0.12
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		cost_g = cost_g_[-1] #+ jnp.sum(cost_g_[:-1])*0.001
+		cost_g = jnp.sum(cost_g_[-50:]) + jnp.sum(cost_g_[:-50])*0.001
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
