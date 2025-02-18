@@ -187,7 +187,11 @@ class cem_planner():
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
-		cost = w1*cost_g + w2*cost_s
+		arc_length_end = jnp.diff(eef_pos, axis = 0)
+		cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
+
+
+		cost = w1*cost_g + 0.1*cost_s +0.3*cost_arc
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
