@@ -186,7 +186,7 @@ class cem_planner():
 		w3 = 0.1
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+		cost_g = cost_g_[-1] #+ jnp.sum(cost_g_[:-1])*0.001
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
