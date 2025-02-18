@@ -75,7 +75,7 @@ class cem_planner():
 		self.l_1 = 1.0
 		self.l_2 = 1.0
 		self.l_3 = 1.0
-		self.ellite_num = int(0.3*self.num_batch)
+		self.ellite_num = int(0.1*self.num_batch)
 		
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
