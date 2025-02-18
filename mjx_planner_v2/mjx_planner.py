@@ -179,8 +179,9 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
-		w1 = 0.99
-		w2 = 1-w1
+		w1 = 1
+		w2 = 0
+		w3 = 0
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
@@ -191,7 +192,7 @@ class cem_planner():
 		cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
 
 
-		cost = w1*cost_g + 0.1*cost_s +0.3*cost_arc
+		cost = w1*cost_g + w2*cost_s + w3*cost_arc
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
@@ -212,7 +213,7 @@ class cem_planner():
 		
 		res = []
 		xi_mean = jnp.zeros(self.nvar)
-		xi_cov = 5*jnp.identity(self.nvar)
+		xi_cov = 1*jnp.identity(self.nvar)
   
 		key, subkey = random.split(self.key)
   
