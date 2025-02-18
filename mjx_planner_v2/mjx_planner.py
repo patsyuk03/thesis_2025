@@ -19,8 +19,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 5
-		self.num = 500
+		self.t_fin = 2
+		self.num = 200
 
 		self.t = self.t_fin/self.num
 		
@@ -70,7 +70,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 1
-		self.maxiter_cem = 30
+		self.maxiter_cem = 20
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -178,10 +178,15 @@ class cem_planner():
 	def compute_cost_single(self, eef_pos, thetadot):
 		w1 = 0.999
 		w2 = 1-w1
-		cost_g = jnp.linalg.norm(eef_pos - self.target_pos)
-		cost_s = np.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
+		weights = jnp.linspace(0, 1, self.num)
+
+		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
+		cost_g = jnp.sum(cost_g_*weights)
+
+		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
+
 		cost = w1*cost_g + w2*cost_s
-		return cost
+		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
@@ -217,7 +222,7 @@ class cem_planner():
 			theta, eef_pos = compute_rollout_batch(thetadot)
 
 			compute_cost_batch = vmap(self.compute_cost_single, in_axes = (0))
-			cost_batch = compute_cost_batch(eef_pos, thetadot)
+			cost_batch, cost_g_batch = compute_cost_batch(eef_pos, thetadot)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
@@ -250,6 +255,7 @@ class cem_planner():
 		idx_min = jnp.argmin(cost_batch)
 		thetadot_best = thetadot[idx_min].reshape((self.num_dof, self.num))
 		np.savetxt('best_vels.csv',thetadot_best, delimiter=",")
+		np.savetxt('cost_g_best.csv',cost_g_batch[idx_min], delimiter=",")
 
 		theta_single = theta[idx_min].reshape(self.num_dof, self.num).T
 		plt.plot(theta_single)
