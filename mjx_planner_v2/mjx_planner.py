@@ -92,7 +92,7 @@ class cem_planner():
 		print(f'Compilation took {time.time() - start}s.')
 
 		object_pos = self.model.body(name="object_0").pos
-		object_pos[-1] += 0.2
+		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 		  
