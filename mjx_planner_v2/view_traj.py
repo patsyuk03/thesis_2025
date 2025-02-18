@@ -11,6 +11,9 @@ model = mujoco.MjModel.from_xml_path(model_path)
 model.opt.timestep = 0.01
 data = mujoco.MjData(model)
 
+init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
+data.qpos[:6] = init_joint_state
+
 file_path = f"{os.path.dirname(__file__)}/best_vels.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',').T
 print(thetadot.shape)
@@ -33,7 +36,8 @@ with viewer.launch_passive(model, data) as viewer_:
             i+=1
         else:
             data.qvel[:6] = np.zeros(6)
-            data.qpos[:6] = np.zeros(6)
+            data.qpos[:6] = init_joint_state
+
             i=0
 
 # print(data.qpos[:6])
