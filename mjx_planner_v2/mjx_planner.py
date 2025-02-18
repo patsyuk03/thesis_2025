@@ -91,7 +91,9 @@ class cem_planner():
 		self.jit_step = jax.jit(mjx.step)
 		print(f'Compilation took {time.time() - start}s.')
 
-		self.target_pos = np.tile(self.model.body(name="object_0").pos, (self.num, 1))
+		object_pos = self.model.body(name="object_0").pos
+		object_pos[-1] += 0.1
+		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 		  
 		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
@@ -179,8 +181,14 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
+<<<<<<< HEAD
 		w1 = 0.99
 		w2 = 1-w1
+=======
+		w1 = 1
+		w2 = 0
+		w3 = 2
+>>>>>>> 5e21ced97aa60c5242cecfd003a4a8ddc080e73f
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
