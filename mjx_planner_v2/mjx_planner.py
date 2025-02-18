@@ -170,6 +170,9 @@ class cem_planner():
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
 		mjx_data = mjx.make_data(self.model)
+		init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
+		qpos = mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		mjx_data = mjx_data.replace(qpos=qpos)
 		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
@@ -178,10 +181,8 @@ class cem_planner():
 	def compute_cost_single(self, eef_pos, thetadot):
 		w1 = 0.99
 		w2 = 1-w1
-		# weights = jnp.linspace(0, 1, self.num)
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		# cost_g = jnp.sum(cost_g_*weights)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
