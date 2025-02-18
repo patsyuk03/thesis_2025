@@ -214,7 +214,7 @@ class cem_planner():
 		
 		res = []
 		xi_mean = jnp.zeros(self.nvar)
-		xi_cov = 1*jnp.identity(self.nvar)
+		xi_cov = 5*jnp.identity(self.nvar)
   
 		key, subkey = random.split(self.key)
   
