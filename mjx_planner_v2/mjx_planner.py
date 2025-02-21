@@ -19,8 +19,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 1
-		self.num = 100
+		self.t_fin = 2
+		self.num = 200
 
 		self.t = self.t_fin/self.num
 		
@@ -174,8 +174,7 @@ class cem_planner():
 		mjx_data = mjx.make_data(self.model)
 		init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 		qpos = mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		ctrl = mjx_data.ctrl.at[:self.num_dof].set(init_joint_state)
-		mjx_data = mjx_data.replace(qpos=qpos, ctrl=ctrl)
+		mjx_data = mjx_data.replace(qpos=qpos)
 		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
@@ -183,11 +182,12 @@ class cem_planner():
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
 		w1 = 1
-		w2 = 0.005
-		w3 = 0.12
+		w2 = 0#0.005
+		w3 = 0#0.12
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		cost_g = jnp.sum(cost_g_[-50:]) + jnp.sum(cost_g_[:-50])*0.001
+		# cost_g = jnp.sum(cost_g_[-50:]) + jnp.sum(cost_g_[:-50])*0.001
+		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
