@@ -12,11 +12,16 @@ model.opt.timestep = 0.01
 data = mujoco.MjData(model)
 
 init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
+# init_joint_state = [0.7, -0.8, 0, 0, 0, 0]
 data.qpos[:6] = init_joint_state
+data.ctrl[:6] = data.qpos[:6]
 
 file_path = f"{os.path.dirname(__file__)}/best_vels.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',').T
-print(thetadot.shape)
+# print(thetadot.shape)
+# thetadot = np.tile(np.array([0, 0.1, 0, 0, 0, 0]), (200, 1))
+# thetadot = np.tile(np.zeros(6), (200, 1))
+
 
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
