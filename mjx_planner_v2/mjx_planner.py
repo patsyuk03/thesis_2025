@@ -174,7 +174,8 @@ class cem_planner():
 		mjx_data = mjx.make_data(self.model)
 		init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 		qpos = mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		mjx_data = mjx_data.replace(qpos=qpos)
+		ctrl = mjx_data.ctrl.at[:self.num_dof].set(init_joint_state)
+		mjx_data = mjx_data.replace(qpos=qpos, ctrl=ctrl)
 		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
