@@ -1,6 +1,8 @@
 import os
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
 
 import numpy as np
 import jax.numpy as jnp
@@ -14,14 +16,6 @@ import mujoco.mjx as mjx
 import mujoco
 import time
 import sys
-
-
-# Tell XLA to use Triton GEMM, this improves steps/sec by ~30% on some GPUs
-# xla_flags = os.environ.get('XLA_FLAGS', '')
-# xla_flags += ' --xla_gpu_triton_gemm_any=True'
-# os.environ['XLA_FLAGS'] = xla_flags
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
 
 
 class cem_planner():
@@ -104,7 +98,6 @@ class cem_planner():
 		print('JIT-compiling the model physics step...')
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
-		self.jit_step_2 = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
 		print(f'Compilation took {time.time() - start}s.')
 
 		object_pos = self.model.body(name="object_0").pos
@@ -112,13 +105,8 @@ class cem_planner():
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 
-		# self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
+		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
-		# self.step_batch = jax.vmap(self.step, in_axes = (0))
-		  
-		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
-  
-		# self.set_initial_final_batch = vmap(self.set_initial_final, in_axes=(0)  )
 	
   
 	def get_A_traj(self):
@@ -191,10 +179,6 @@ class cem_planner():
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
-		# mjx_data = mjx.make_data(self.model)
-		# init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
-		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		# mjx_data = self.mjx_data.replace(qpos=qpos)
 		_, out = jax.lax.scan(self.mjx_step, self.mjx_data, thetadot_single.T, length=self.num)
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
@@ -202,25 +186,10 @@ class cem_planner():
 	@partial(jit, static_argnums=(0,))
 	def step(self, batched_data, thetadot):
 		batched_thetadot = thetadot.reshape(self.num_batch, self.num_dof)
-		# mjx_data = mjx.make_data(self.model)
-		# init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
-		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		# mjx_data = self.mjx_data.replace(qpos=qpos)
-		# _, out = jax.lax.scan(self.mjx_step, mjx_data, theta_in_single.T, length=self.num)
-		# joint_states = jax.vmap(lambda qvel: init_joint_state+(qvel*self.model.opt.timestep))(thetadot_single.T)
-		# print(joint_states)
-		# batch = jax.vmap(lambda qpos: mjx_data.replace(qpos=mjx_data.qpos.at[:self.num_dof].set(qpos)))(theta_in_single.T)
-		# batch = jax.vmap(lambda qvel: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(qvel)))(theta_in_single.T)
-		# batch = jax.vmap(lambda qpos: self.mjx_data.replace(qpos=mjx_data.qpos.at[:self.num_dof].set(qpos)))(theta_in_single)
 		batch = jax.vmap(lambda mjx_data, thetadot_single: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(thetadot_single)))(batched_data, batched_thetadot)
-
 		batched_data = self.jit_step_2(self.mjx_model, batch)
-		# theta = jax.vmap(lambda mjx_data_: jnp.array(mjx_data_.qpos[:self.num_dof]))(out)
-		# eef_pos = jax.vmap(lambda mjx_data_: mjx_data_.xpos[self.model.body(name="hande").id])(out)
 		theta_eef_pose = jax.vmap(lambda mjx_data_: jnp.concatenate((jnp.array(mjx_data_.qpos[:self.num_dof]), mjx_data_.xpos[self.model.body(name="hande").id])))(batched_data)
-		# print(theta_eef_pose[:,:self.num_dof].shape, sys.getsizeof(theta_eef_pose[:,:self.num_dof]), out[0].shape, sys.getsizeof(out[0]))
 		theta, eef_pos = theta_eef_pose[:, :self.num_dof], theta_eef_pose[:, self.num_dof:]
-		# theta, eef_pos = out
 		return batched_data, (theta.flatten(), eef_pos.flatten())
 	
 	@partial(jit, static_argnums=(0,))
@@ -230,7 +199,6 @@ class cem_planner():
 		w3 = 0#0.12
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		# cost_g = jnp.sum(cost_g_[-50:]) + jnp.sum(cost_g_[:-50])*0.001
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
 
 		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
@@ -270,45 +238,22 @@ class cem_planner():
 			xi_filtered = self.compute_projection_filter(xi_samples, state_term ) 
 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
-			theta_in = jnp.dot(self.A_theta, xi_filtered.T).T
+			# theta_in = jnp.dot(self.A_theta, xi_filtered.T).T
 
-			# print(theta_in.shape)
+			# batched_data = jax.vmap(lambda _, x: x, in_axes=(0, None))(jnp.arange(self.num_batch), self.mjx_data)
+			# _, out = jax.lax.scan(self.step, batched_data, thetadot.reshape(self.num_batch*self.num_dof, self.num).T, length=self.num)
+			# theta, eef_pos = out
+			# theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
 
-			
-			# theta, eef_pos = self.compute_rollout_batch(theta_in)
-			# theta, eef_pos = self.step_batch(theta_in.reshape(self.num_batch*self.num_dof, self.num).T)
-			batched_data = jax.vmap(lambda _, x: x, in_axes=(0, None))(jnp.arange(self.num_batch), self.mjx_data)
+			theta, eef_pos = self.compute_rollout_batch(thetadot)
+			cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos, thetadot)
 
-			_, out = jax.lax.scan(self.step, batched_data, thetadot.reshape(self.num_batch*self.num_dof, self.num).T, length=self.num)
-			theta, eef_pos = out
-			theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
-
-			# cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos.T, thetadot)
-
-			# xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
-			# xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
-			# res.append(jnp.min(cost_batch))
+			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
+			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
+			res.append(jnp.min(cost_batch))
 
 			print(f"Iter #{i+1}: {round(time.time() - time_start, 2)}s")
 			time_start = time.time()
-
-			# theta_single = theta[0].reshape(self.num_dof, self.num).T
-
-			# np.savetxt('output_vels.csv',thetadot[0].reshape(self.num_dof, self.num).T, delimiter=",")
-			# np.savetxt('output_traj.csv',theta[0].reshape(self.num_dof, self.num).T ,delimiter=",")
-			
-			# plt.plot(theta_single)
-			# plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
-			# plt.savefig('single_traj.png')
-			# plt.clf()
-
-   
-			# for i in range(theta.shape[0]):
-			# 	theta_single = theta[i].reshape(self.num_dof, self.num).T
-			# 	plt.plot(theta_single)
-			# plt.savefig('trajectories_1.png')
-
-			# cost_batch = self.compute_cost
 
 		print(res)
 		np.savetxt('output_costs1.csv',res, delimiter=",")
