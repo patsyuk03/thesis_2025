@@ -182,7 +182,7 @@
     </fixed>
   </tendon>
 
-  <actuator>
+  <!-- <actuator>
     <general class="size3_1" name="shoulder_pan_1" joint="shoulder_pan_joint_1"/>
     <general class="size3_1" name="shoulder_lift_1" joint="shoulder_lift_joint_1"/>
     <general class="size3_limited_1" name="elbow_1" joint="elbow_joint_1"/>
@@ -192,5 +192,5 @@
     <general name="hande_fingers_actuator" class="hande" tendon="split" ctrlrange="0 255"
       forcerange="-200 200" gaintype="affine" biastype="affine" gainprm="0.00980392"
       biasprm="0 -100 -10" />
-  </actuator> 
+  </actuator>  -->
 </mujoco>
