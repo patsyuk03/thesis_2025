@@ -1,3 +1,5 @@
+import os
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 
 import numpy as np
@@ -8,10 +10,19 @@ import bernstein_coeff_order10_arbitinterval
 import scipy
 from functools import partial
 import matplotlib.pyplot as plt 
-import os
 import mujoco.mjx as mjx 
 import mujoco
 import time
+import sys
+
+
+# Tell XLA to use Triton GEMM, this improves steps/sec by ~30% on some GPUs
+# xla_flags = os.environ.get('XLA_FLAGS', '')
+# xla_flags += ' --xla_gpu_triton_gemm_any=True'
+# os.environ['XLA_FLAGS'] = xla_flags
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+
 
 class cem_planner():
 
@@ -83,18 +94,27 @@ class cem_planner():
 		self.model.opt.timestep = 0.01
 
 		self.mjx_model = mjx.put_model(self.model)
+		self.mjx_data = mjx.make_data(self.model)
+		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+		qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		self.mjx_data = self.mjx_data.replace(qpos=qpos)
 		print("Timestep", self.mjx_model.opt.timestep)
 
 		print(f'Default backend: {jax.default_backend()}')
 		print('JIT-compiling the model physics step...')
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
+		self.jit_step_2 = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
 		print(f'Compilation took {time.time() - start}s.')
 
 		object_pos = self.model.body(name="object_0").pos
 		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
+
+		# self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
+		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
+		# self.step_batch = jax.vmap(self.step, in_axes = (0))
 		  
 		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
   
@@ -171,13 +191,37 @@ class cem_planner():
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
-		mjx_data = mjx.make_data(self.model)
-		init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
-		qpos = mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		mjx_data = mjx_data.replace(qpos=qpos)
-		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
+		# mjx_data = mjx.make_data(self.model)
+		# init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		# mjx_data = self.mjx_data.replace(qpos=qpos)
+		_, out = jax.lax.scan(self.mjx_step, self.mjx_data, thetadot_single.T, length=self.num)
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
+	
+	@partial(jit, static_argnums=(0,))
+	def step(self, batched_data, thetadot):
+		batched_thetadot = thetadot.reshape(self.num_batch, self.num_dof)
+		# mjx_data = mjx.make_data(self.model)
+		# init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		# mjx_data = self.mjx_data.replace(qpos=qpos)
+		# _, out = jax.lax.scan(self.mjx_step, mjx_data, theta_in_single.T, length=self.num)
+		# joint_states = jax.vmap(lambda qvel: init_joint_state+(qvel*self.model.opt.timestep))(thetadot_single.T)
+		# print(joint_states)
+		# batch = jax.vmap(lambda qpos: mjx_data.replace(qpos=mjx_data.qpos.at[:self.num_dof].set(qpos)))(theta_in_single.T)
+		# batch = jax.vmap(lambda qvel: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(qvel)))(theta_in_single.T)
+		# batch = jax.vmap(lambda qpos: self.mjx_data.replace(qpos=mjx_data.qpos.at[:self.num_dof].set(qpos)))(theta_in_single)
+		batch = jax.vmap(lambda mjx_data, thetadot_single: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(thetadot_single)))(batched_data, batched_thetadot)
+
+		batched_data = self.jit_step_2(self.mjx_model, batch)
+		# theta = jax.vmap(lambda mjx_data_: jnp.array(mjx_data_.qpos[:self.num_dof]))(out)
+		# eef_pos = jax.vmap(lambda mjx_data_: mjx_data_.xpos[self.model.body(name="hande").id])(out)
+		theta_eef_pose = jax.vmap(lambda mjx_data_: jnp.concatenate((jnp.array(mjx_data_.qpos[:self.num_dof]), mjx_data_.xpos[self.model.body(name="hande").id])))(batched_data)
+		# print(theta_eef_pose[:,:self.num_dof].shape, sys.getsizeof(theta_eef_pose[:,:self.num_dof]), out[0].shape, sys.getsizeof(out[0]))
+		theta, eef_pos = theta_eef_pose[:, :self.num_dof], theta_eef_pose[:, self.num_dof:]
+		# theta, eef_pos = out
+		return batched_data, (theta.flatten(), eef_pos.flatten())
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
@@ -226,16 +270,24 @@ class cem_planner():
 			xi_filtered = self.compute_projection_filter(xi_samples, state_term ) 
 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
+			theta_in = jnp.dot(self.A_theta, xi_filtered.T).T
 
-			compute_rollout_batch = vmap(self.compute_rollout_single, in_axes = (0))
-			theta, eef_pos = compute_rollout_batch(thetadot)
+			# print(theta_in.shape)
 
-			compute_cost_batch = vmap(self.compute_cost_single, in_axes = (0))
-			cost_batch, cost_g_batch = compute_cost_batch(eef_pos, thetadot)
+			
+			# theta, eef_pos = self.compute_rollout_batch(theta_in)
+			# theta, eef_pos = self.step_batch(theta_in.reshape(self.num_batch*self.num_dof, self.num).T)
+			batched_data = jax.vmap(lambda _, x: x, in_axes=(0, None))(jnp.arange(self.num_batch), self.mjx_data)
 
-			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
-			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
-			res.append(jnp.min(cost_batch))
+			_, out = jax.lax.scan(self.step, batched_data, thetadot.reshape(self.num_batch*self.num_dof, self.num).T, length=self.num)
+			theta, eef_pos = out
+			theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
+
+			# cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos.T, thetadot)
+
+			# xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
+			# xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
+			# res.append(jnp.min(cost_batch))
 
 			print(f"Iter #{i+1}: {round(time.time() - time_start, 2)}s")
 			time_start = time.time()
