@@ -29,7 +29,7 @@ with viewer.launch_passive(model, data) as viewer_:
     i = 0
     while viewer_.is_running():
         step_start = time.time()
-        data.qvel[:6] = 0
+        data.qvel[:6] = thetadot[i]
         mujoco.mj_step(model, data)
         viewer_.sync()
 
