@@ -18,7 +18,7 @@ data.qpos[:6] = init_joint_state
 
 file_path = f"{os.path.dirname(__file__)}/best_vels.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',').T
-# thetadot = np.tile(np.zeros(6), (200, 1))
+# thetadot = np.tile(np.zeros(6), (300, 1))
 # thetadot[:, 1] = 0.5
 
 no_contact = np.zeros(4)
