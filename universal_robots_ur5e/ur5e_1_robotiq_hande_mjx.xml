@@ -36,14 +36,14 @@
 
     </default>
 
-    <default class="hande">
+    <!-- <default class="hande">
       <default class="hande_right_finger">
         <joint type="slide" range="0 0.025" actuatorfrcrange="-100 100"/>
       </default>
       <default class="hande_left_finger">
         <joint type="slide" range="0 0.025" actuatorfrcrange="-100 100"/>
       </default>
-    </default>
+    </default> -->
 
   </default>
 
@@ -74,10 +74,10 @@
     <mesh name="wrist2_2_1" file="ur5e/wrist2_2.obj"/>
     <mesh name="wrist3_1" file="ur5e/wrist3.obj"/>
 
-    <mesh name="hande" file="hande/hande.stl"/>
+    <!-- <mesh name="hande" file="hande/hande.stl"/>
     <mesh name="coupler" file="hande/coupler.stl"/>
     <mesh name="right_finger" file="hande/finger_1.stl"/>
-    <mesh name="left_finger" file="hande/finger_2.stl"/>
+    <mesh name="left_finger" file="hande/finger_2.stl"/> -->
 
   </asset>
 
@@ -142,7 +142,7 @@
                     <geom class="collision_1" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
                     <site name="attachment_site_1" pos="0 0.1 0" quat="-1 1 0 0"/>
 
-                    <body name="hande" pos="0 0.1 0" quat="-1 1 0 0">
+                    <!-- <body name="hande" pos="0 0.1 0" quat="-1 1 0 0">
                       <geom mesh="coupler" name="hande_coupler" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
                       <geom mesh="hande" name="hande_base" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
                       <site name="tcp" pos="0 0 0.135"/>
@@ -150,17 +150,17 @@
 
                       <body name="hande_left_finger" pos="0 0 0.099">
                         <inertial pos="0.02262 -0.00759 0.00738" quat="0.871952 0.0369732 -0.211073 0.440205" mass="0.03804" diaginertia="1.22763e-05 1.22763e-05 1.22763e-05"/>
-                        <!-- <joint name="hande_left_finger_joint" class="hande_left_finger" pos="0 0 0" axis="1 0 0"/> -->
+                        <joint name="hande_left_finger_joint" class="hande_left_finger" pos="0 0 0" axis="1 0 0"/>
                         <geom mesh="left_finger" type="mesh" group="1" rgba="0.4 0.4 0.4 1" />
                       </body>
 
                       <body name="hande_right_finger" pos="0 0 0.099">
                         <inertial pos="-0.02262 0.00759 0.00738" quat="0.871952 -0.0369732 0.211073 0.440205" mass="0.03804" diaginertia="1.22763e-05 1.22763e-05 1.22763e-05"/>
-                        <!-- <joint name="hande_right_finger_joint" class="hande_right_finger" pos="0 0 0" axis="-1 0 0"/> -->
+                        <joint name="hande_right_finger_joint" class="hande_right_finger" pos="0 0 0" axis="-1 0 0"/>
                         <geom mesh="right_finger" type="mesh" group="1" rgba="0.4 0.4 0.4 1"/>
                       </body>
 
-                    </body>
+                    </body> -->
                   </body>
                 </body>
               </body>
@@ -173,9 +173,9 @@
 
   <!-- <equality>
     <joint joint1="hande_left_finger_joint" joint2="hande_right_finger_joint" polycoef="0 1 0 0 0" />
-  </equality> -->
+  </equality>
 
-  <!-- <tendon>
+  <tendon>
     <fixed name="split">
       <joint joint="hande_left_finger_joint" coef="0.5" />
       <joint joint="hande_right_finger_joint" coef="0.5" />

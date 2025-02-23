@@ -1,5 +1,9 @@
 import os
 
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
+
 import numpy as np
 import jax.numpy as jnp
 import jax
@@ -260,30 +264,30 @@ class cem_planner():
 		theta, eef_pos = out
 		return theta.T.flatten(), eef_pos
 	
-	@partial(jit, static_argnums=(0,))
-	def step(self, batched_data, thetadot):
-		batched_thetadot = thetadot.reshape(self.num_batch, self.num_dof)
-		batch = jax.vmap(lambda mjx_data, thetadot_single: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(thetadot_single)))(batched_data, batched_thetadot)
-		batched_data = self.jit_step_2(self.mjx_model, batch)
-		theta_eef_pose = jax.vmap(lambda mjx_data_: jnp.concatenate((jnp.array(mjx_data_.qpos[:self.num_dof]), mjx_data_.xpos[self.model.body(name="hande").id])))(batched_data)
-		theta, eef_pos = theta_eef_pose[:, :self.num_dof], theta_eef_pose[:, self.num_dof:]
-		return batched_data, (theta.flatten(), eef_pos.flatten())
+	# @partial(jit, static_argnums=(0,))
+	# def step(self, batched_data, thetadot):
+	# 	batched_thetadot = thetadot.reshape(self.num_batch, self.num_dof)
+	# 	batch = jax.vmap(lambda mjx_data, thetadot_single: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(thetadot_single)))(batched_data, batched_thetadot)
+	# 	batched_data = self.jit_step_2(self.mjx_model, batch)
+	# 	theta_eef_pose = jax.vmap(lambda mjx_data_: jnp.concatenate((jnp.array(mjx_data_.qpos[:self.num_dof]), mjx_data_.xpos[self.model.body(name="hande").id])))(batched_data)
+	# 	theta, eef_pos = theta_eef_pose[:, :self.num_dof], theta_eef_pose[:, self.num_dof:]
+	# 	return batched_data, (theta.flatten(), eef_pos.flatten())
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot):
 		w1 = 1
-		w2 = 0.005
-		w3 = 0#0.12
+		# w2 = 0.005
+		# w3 = 0#0.12
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
 
-		cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
+		# cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
-		arc_length_end = jnp.diff(eef_pos, axis = 0)
-		cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
+		# arc_length_end = jnp.diff(eef_pos, axis = 0)
+		# cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
 
-		cost = w1*cost_g + w2*cost_s + w3*cost_arc
+		cost = w1*cost_g #+ w2*cost_s + w3*cost_arc
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
