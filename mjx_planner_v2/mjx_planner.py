@@ -24,7 +24,7 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 2
+		self.t_fin = 4
 		self.num = 200
 
 		self.t = self.t_fin/self.num
@@ -85,7 +85,7 @@ class cem_planner():
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
-		self.model.opt.timestep = 0.01
+		self.model.opt.timestep = 0.02
 
 		self.mjx_model = mjx.put_model(self.model)
 		self.mjx_data = mjx.make_data(self.model)
@@ -104,6 +104,9 @@ class cem_planner():
 		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
+
+		self.geom_ids = jnp.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
+		# self.jit_intersect1d = jax.jit(jnp.intersect1d, static_argnames=['size'])
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
@@ -255,14 +258,19 @@ class cem_planner():
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
 		current_position = mjx_data.xpos[self.model.body(name="hande").id]
 		eef_pos = jnp.array(current_position)
-		return mjx_data, (theta, eef_pos)
+		# contact = jnp.unique(mjx_data.contact.geom.flatten())
+		# contact = [(id in mjx_data.contact.geom.flatten()) for id in self.geom_ids].sum()
+		# contact = self.jit_intersect1d(ar1=mjx_data.contact.geom.flatten(), ar2=self.geom_ids, size=1, fill_value=0)
+		collision = mjx_data.contact.geom.flatten()
+
+		return mjx_data, (theta, eef_pos, collision)
 
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
 		_, out = jax.lax.scan(self.mjx_step, self.mjx_data, thetadot_single.T, length=self.num)
-		theta, eef_pos = out
-		return theta.T.flatten(), eef_pos
+		theta, eef_pos, collision = out
+		return theta.T.flatten(), eef_pos, collision
 	
 	# @partial(jit, static_argnums=(0,))
 	# def step(self, batched_data, thetadot):
@@ -274,10 +282,14 @@ class cem_planner():
 	# 	return batched_data, (theta.flatten(), eef_pos.flatten())
 	
 	@partial(jit, static_argnums=(0,))
-	def compute_cost_single(self, eef_pos, thetadot):
+	def compute_cost_single(self, eef_pos, thetadot, collision):
+		# contact = [id in collision.flatten() for id in self.geom_ids]
+		contact = jnp.sum(jnp.isin(self.geom_ids, collision.flatten()))
+		# contact = (self.geom_ids in collision).any()
 		w1 = 1
 		# w2 = 0.005
 		# w3 = 0#0.12
+		w_col = 0.5#jnp.where(contact, 100, 0)
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
@@ -287,7 +299,7 @@ class cem_planner():
 		# arc_length_end = jnp.diff(eef_pos, axis = 0)
 		# cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
 
-		cost = w1*cost_g #+ w2*cost_s + w3*cost_arc
+		cost = w1*cost_g+w_col*contact #+ w2*cost_s + w3*cost_arc
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
@@ -320,8 +332,8 @@ class cem_planner():
 			# theta, eef_pos = out
 			# theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
 
-			theta, eef_pos = self.compute_rollout_batch(thetadot)
-			cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos, thetadot)
+			theta, eef_pos, collision = self.compute_rollout_batch(thetadot)
+			cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos, thetadot, collision)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)

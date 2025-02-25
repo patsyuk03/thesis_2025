@@ -7,6 +7,7 @@ model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xm
 
 # Load the MuJoCo model
 model = mujoco.MjModel.from_xml_path(model_path)
+model.opt.disableactuator = 0
 
 # Create a data structure for simulation
 data = mujoco.MjData(model)
