@@ -85,10 +85,12 @@ class cem_planner():
 
 		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
+		data = mujoco.MjData(self.model)
 		self.model.opt.timestep = 0.02
 
 		self.mjx_model = mjx.put_model(self.model)
-		self.mjx_data = mjx.make_data(self.model)
+		# self.mjx_data = mjx.make_data(self.model)
+		self.mjx_data = mjx.put_data(self.model, data)
 		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 		qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
 		self.mjx_data = self.mjx_data.replace(qpos=qpos)
@@ -104,9 +106,6 @@ class cem_planner():
 		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
-
-		self.geom_ids = jnp.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
-		# self.jit_intersect1d = jax.jit(jnp.intersect1d, static_argnames=['size'])
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
@@ -258,10 +257,7 @@ class cem_planner():
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
 		current_position = mjx_data.xpos[self.model.body(name="hande").id]
 		eef_pos = jnp.array(current_position)
-		# contact = jnp.unique(mjx_data.contact.geom.flatten())
-		# contact = [(id in mjx_data.contact.geom.flatten()) for id in self.geom_ids].sum()
-		# contact = self.jit_intersect1d(ar1=mjx_data.contact.geom.flatten(), ar2=self.geom_ids, size=1, fill_value=0)
-		collision = mjx_data.contact.geom.flatten()
+		collision = mjx_data.contact.dist<0
 
 		return mjx_data, (theta, eef_pos, collision)
 
@@ -283,13 +279,11 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot, collision):
-		# contact = [id in collision.flatten() for id in self.geom_ids]
-		contact = jnp.sum(jnp.isin(self.geom_ids, collision.flatten()))
-		# contact = (self.geom_ids in collision).any()
+		contact = jnp.sum(collision)
 		w1 = 1
 		# w2 = 0.005
 		# w3 = 0#0.12
-		w_col = 0.5#jnp.where(contact, 100, 0)
+		w_col = 0.001
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
@@ -321,6 +315,7 @@ class cem_planner():
   
 		time_start = time.time()
 		for i in range(0, self.maxiter_cem):
+		# for i in range(1):
 			
 			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov ) # xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
 			xi_filtered = self.compute_projection_filter(xi_samples, state_term, maxiter_projection, v_max, a_max, p_max)
@@ -344,11 +339,13 @@ class cem_planner():
 
 		print(res)
 		np.savetxt('output_costs1.csv',res, delimiter=",")
+		
 
 		idx_min = jnp.argmin(cost_batch)
 		thetadot_best = thetadot[idx_min].reshape((self.num_dof, self.num))
 		np.savetxt('best_vels.csv',thetadot_best, delimiter=",")
 		np.savetxt('cost_g_best.csv',cost_g_batch[idx_min], delimiter=",")
+		np.savetxt('collision.csv',collision[idx_min], delimiter=",")
 
 		theta_single = theta[idx_min].reshape(self.num_dof, self.num).T
 		plt.plot(theta_single)
