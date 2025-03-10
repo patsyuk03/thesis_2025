@@ -107,6 +107,8 @@ class cem_planner():
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 
+		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
+
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
 	
@@ -257,7 +259,8 @@ class cem_planner():
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
 		current_position = mjx_data.xpos[self.model.body(name="hande").id]
 		eef_pos = jnp.array(current_position)
-		collision = mjx_data.contact.dist<0
+		# collision = mjx_data.contact.dist<0
+		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=20, fill_value=65)].flatten()
 
 		return mjx_data, (theta, eef_pos, collision)
 
@@ -279,11 +282,11 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, eef_pos, thetadot, collision):
-		contact = jnp.sum(collision)
+		contact = jnp.sum(jnp.isin(self.geom_ids, collision))
 		w1 = 1
 		# w2 = 0.005
 		# w3 = 0#0.12
-		w_col = 0.001
+		w_col = 0.1
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001

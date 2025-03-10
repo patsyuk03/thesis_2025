@@ -87,12 +87,15 @@ with viewer.launch_passive(model, data) as viewer_:
         # # print(collision_geom[collision<0])
         # collision = collision_geom[collision_dist<0]
         # print(collision)
+        # print(np.where(collision_geom==36))
+        # print(np.where(collision_geom==1))
+        # print(collision_geom[64:67])
     
 
         # print(len(mjx_data.contact.geom))
         # print(data.contact)
         # print(mujoco.mj_collision(model, data))
-        # contact = np.sum(np.isin(geom_ids, collision))
+        # contact = np.sum(np.isin(geom_ids, collision.flatten()))
         # print(contact)
 
         # if len(data.contact.geom1) != len(no_contact):
