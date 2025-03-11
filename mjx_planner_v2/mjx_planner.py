@@ -107,6 +107,8 @@ class cem_planner():
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 
+		self.target_rot = np.array([180, 0, 0])
+
 		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
@@ -250,6 +252,28 @@ class cem_planner():
 			primal_sol, s_v, s_a, s_p,  lamda_v, lamda_a, lamda_p, res_projection  = self.compute_projection(v_max, a_max, p_max, lamda_v, lamda_a, lamda_p, s_v, s_a, s_p,b_eq_term,  xi_samples)
 	 
 		return primal_sol
+	
+	@partial(jit, static_argnums=(0,))
+	def quaternion_to_euler(self, quaternion):
+		w, x, y, z = quaternion
+		ysqr = y * y
+
+		t0 = +2.0 * (w * x + y * z)
+		t1 = +1.0 - 2.0 * (x * x + ysqr)
+		X = jnp.rad2deg(jnp.arctan2(t0, t1))
+
+		t2 = +2.0 * (w * y - z * x)
+
+		t2 = jnp.clip(t2, a_min=-1.0, a_max=1.0)
+		Y = jnp.rad2deg(jnp.arcsin(t2))
+
+		t3 = +2.0 * (w * z + x * y)
+		t4 = +1.0 - 2.0 * (ysqr + z * z)
+		Z = jnp.rad2deg(jnp.arctan2(t3, t4))
+
+		euler = jnp.round(jnp.array([X,Y,Z]), 2)
+
+		return euler
 
 	@partial(jit, static_argnums=(0,))
 	def mjx_step(self, mjx_data, thetadot_single):
@@ -258,18 +282,19 @@ class cem_planner():
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
 		current_position = mjx_data.xpos[self.model.body(name="hande").id]
+		current_rotation = self.quaternion_to_euler(mjx_data.xquat[self.model.body(name="hande").id])
 		eef_pos = jnp.array(current_position)
-		# collision = mjx_data.contact.dist<0
+		eef_rot = jnp.array(current_rotation)
 		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=20, fill_value=65)].flatten()
 
-		return mjx_data, (theta, eef_pos, collision)
+		return mjx_data, (theta, eef_pos, eef_rot, collision)
 
 	@partial(jit, static_argnums=(0,))
 	def compute_rollout_single(self, thetadot):
 		thetadot_single = thetadot.reshape(self.num_dof, self.num)
 		_, out = jax.lax.scan(self.mjx_step, self.mjx_data, thetadot_single.T, length=self.num)
-		theta, eef_pos, collision = out
-		return theta.T.flatten(), eef_pos, collision
+		theta, eef_pos, eef_rot, collision = out
+		return theta.T.flatten(), eef_pos, eef_rot, collision
 	
 	# @partial(jit, static_argnums=(0,))
 	# def step(self, batched_data, thetadot):
@@ -281,22 +306,24 @@ class cem_planner():
 	# 	return batched_data, (theta.flatten(), eef_pos.flatten())
 	
 	@partial(jit, static_argnums=(0,))
-	def compute_cost_single(self, eef_pos, thetadot, collision):
+	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
 		contact = jnp.sum(jnp.isin(self.geom_ids, collision))
-		w1 = 1
-		# w2 = 0.005
-		# w3 = 0#0.12
+		w_pos = 1
+		w_rot = 0.03
 		w_col = 0.1
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+
+		cost_r_ = jnp.linalg.norm(eef_rot[:,:-1] - self.target_rot[:-1], axis=1)
+		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
 
 		# cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
 		# arc_length_end = jnp.diff(eef_pos, axis = 0)
 		# cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
 
-		cost = w1*cost_g+w_col*contact #+ w2*cost_s + w3*cost_arc
+		cost = w_pos*cost_g + w_rot*cost_r + w_col*contact
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
@@ -330,8 +357,8 @@ class cem_planner():
 			# theta, eef_pos = out
 			# theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
 
-			theta, eef_pos, collision = self.compute_rollout_batch(thetadot)
-			cost_batch, cost_g_batch = self.compute_cost_batch(eef_pos, thetadot, collision)
+			theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot)
+			cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)

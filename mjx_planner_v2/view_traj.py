@@ -49,6 +49,8 @@ thetadot = np.genfromtxt(file_path, delimiter=',').T
 # thetadot = np.tile(np.zeros(6), (300, 1))
 # thetadot[:, 1] = 0.5
 
+print(thetadot.shape)
+
 no_contact = np.zeros(4)
 # geom_names = [model.geom_names[i] for i in range(model.ngeom)]
 
@@ -67,10 +69,18 @@ with viewer.launch_passive(model, data) as viewer_:
         step_start = time.time()
         data.qvel[:6] = thetadot[i]
         # data.qpos[:6] = data.ctrl[:6]
-        # qvel = mjx_data.qvel.at[:6].set(thetadot[i])
-        # mjx_data = mjx_data.replace(qvel=qvel)
-        # quaternion = data.xquat[model.body(name="hande").id]
-        # print(quaternion_to_euler(quaternion), quaternion)
+        # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
+        # mjx_data = mjx_data.replace(qpos=qpos)
+        quat_gripper = data.xquat[model.body(name="hande").id]
+        # quaternion_box = data.xquat[model.body(name="object_0").id]
+        # quaternion_arm = data.xquat[model.body(name="forearm_link_1").id]
+
+        # print(quat_gripper, quaternion_arm)
+
+        # local_quat_rel = np.zeros(4)
+        # mujoco.mju_mulQuat(local_quat_rel, quaternion_arm, quaternion_arm)
+        # print(quaternion_to_euler(local_quat_rel), local_quat_rel)
+        # print(quaternion_to_euler(quat_gripper), quat_gripper)
         # mjx_data = jit_step(mjx_model, mjx_data)
         mujoco.mj_step(model, data)
         viewer_.sync()
