@@ -28,7 +28,7 @@ def quaternion_to_euler(quaternion):
     return euler
 
 
-model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
+model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 model.opt.timestep = 0.02
 data = mujoco.MjData(model)

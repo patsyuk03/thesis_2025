@@ -83,7 +83,7 @@ class cem_planner():
 		self.ellite_num = int(0.3*self.num_batch)
 		
 
-		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
+		model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
 		data = mujoco.MjData(self.model)
 		self.model.opt.timestep = 0.02
