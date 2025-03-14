@@ -75,12 +75,12 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 10
-		self.maxiter_cem = 10
+		self.maxiter_cem = 30
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
 		self.l_3 = 1.0
-		self.ellite_num = int(0.3*self.num_batch)
+		self.ellite_num = int(0.1*self.num_batch)
 		
 
 		model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
@@ -97,6 +97,8 @@ class cem_planner():
 		print("Timestep", self.mjx_model.opt.timestep)
 
 		print(f'Default backend: {jax.default_backend()}')
+		# jax.config.update("jax_debug_nans", True)
+		# jax.config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 		print('JIT-compiling the model physics step...')
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
@@ -114,6 +116,8 @@ class cem_planner():
 		print(f'Target position: {self.target_pos[0]}')
 
 		self.target_rot = np.array([180, 0, 0])
+
+		self.hande_id = self.model.body(name="hande").id
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
@@ -285,9 +289,8 @@ class cem_planner():
 		mjx_data = mjx_data.replace(qvel=qvel)
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
-		current_position = mjx_data.xpos[self.model.body(name="hande").id]
-		current_rotation = self.quaternion_to_euler(mjx_data.xquat[self.model.body(name="hande").id])
-		# current_rotation = mjx_data.xquat[self.model.body(name="hande").id]
+		current_position = mjx_data.xpos[self.hande_id]
+		current_rotation = self.quaternion_to_euler(mjx_data.xquat[self.hande_id])
 		eef_pos = jnp.array(current_position)
 		eef_rot = jnp.array(current_rotation)
 		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
@@ -312,9 +315,13 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
-		w_pos = 1
+		w_pos = 2
 		w_rot = 0.03
 		w_col = 0.1
+
+		# w_pos = 1
+		# w_rot = 0.03 *0
+		# w_col = 0.1 *0
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
@@ -367,7 +374,6 @@ class cem_planner():
 			theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot)
 			cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
 
-			# print(eef_rot[0])
 			cost_batch = jnp.nan_to_num(cost_batch)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
@@ -398,7 +404,7 @@ def main():
 	# cost_history = list()
 	# for num_batch in num_batches:
 	num_dof = 6
-	num_batch = 100
+	num_batch = 1000
 
 	opt_class =  cem_planner(num_dof, num_batch)	
 	theta_init = np.tile([1.5, -1.8, 1.75, -1.25, -1.6, 0], (num_batch, 1))
