@@ -38,8 +38,8 @@ init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 # init_joint_state = [1.3, -0.8, 0, 0, 0, 0]
 data.qpos[:6] = init_joint_state
 
-mjx_model = mjx.put_model(model)
-mjx_data = mjx.put_data(model, data)
+# mjx_model = mjx.put_model(model)
+# mjx_data = mjx.put_data(model, data)
 
 # jit_step = jax.jit(mjx.step)
 
@@ -58,9 +58,9 @@ with viewer.launch_passive(model, data) as viewer_:
     while viewer_.is_running():
         step_start = time.time()
         data.qvel[:6] = thetadot[i]
-        # data.qpos[:6] = data.ctrl[:6]
+        # data.qpos[:6] = init_joint_state
 
-        quat_gripper = data.xquat[model.body(name="hande").id]
+        # quat_gripper = data.xquat[model.body(name="hande").id]
 
         # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
         # mjx_data = mjx_data.replace(qpos=qpos)
@@ -78,5 +78,5 @@ with viewer.launch_passive(model, data) as viewer_:
         else:
             data.qvel[:6] = np.zeros(6)
             data.qpos[:6] = init_joint_state
-            mjx_data = mjx.put_data(model, data)
+            # mjx_data = mjx.put_data(model, data)
             i=0

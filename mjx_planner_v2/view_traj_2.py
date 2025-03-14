@@ -29,10 +29,14 @@ def quaternion_to_euler(quaternion):
     return euler
 
 
-model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
+model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 model.opt.timestep = 0.02
 data = mujoco.MjData(model)
+
+camera = mujoco.MjvCamera() 
+camera.lookat[:] = [0.0, 0.0, 0.0]
+camera.distance = 3.0  
 
 renderer = mujoco.Renderer(model)
 jit_step = jax.jit(mjx.step)
@@ -43,8 +47,8 @@ data.qpos[:6] = init_joint_state
 mjx_model = mjx.put_model(model)
 mjx_data = mjx.put_data(model, data)
 
-file_path = f"{os.path.dirname(__file__)}/best_vels.csv" 
-thetadot = np.genfromtxt(file_path, delimiter=',').T
+file_path = f"{os.path.dirname(__file__)}/data/best_vels.csv" 
+thetadot = np.genfromtxt(file_path, delimiter=',')
 
 geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
 # [33  7 12 13 18 19 23 27 28 30]
@@ -60,18 +64,18 @@ while True:
     qvel = mjx_data.qvel.at[:6].set(thetadot[i])
     mjx_data = mjx_data.replace(qvel=qvel)
     mjx_data = jit_step(mjx_model, mjx_data)
-    data = mjx.get_data(model, mjx_data)
+    data_temp = mjx.get_data(model, mjx_data)
 
     time_until_next_step = model.opt.timestep - (time.time() - step_start)
     if time_until_next_step > 0:
         time.sleep(time_until_next_step)
 
-    collision_geom = mjx_data.contact.geom
-    collision_dist = mjx_data.contact.dist
-    collision = collision_geom[collision_dist<0]
-    print(collision)
+    # collision_geom = mjx_data.contact.geom
+    # collision_dist = mjx_data.contact.dist
+    # collision = collision_geom[collision_dist<0]
+    # print(collision)
 
-    renderer.update_scene(data, scene_option=scene_option)
+    renderer.update_scene(data_temp, scene_option=scene_option, camera=camera)
     pixels = renderer.render()
 
     cv2.imshow("img", pixels)

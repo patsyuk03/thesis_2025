@@ -75,7 +75,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 10
-		self.maxiter_cem = 20
+		self.maxiter_cem = 10
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -102,14 +102,18 @@ class cem_planner():
 		self.jit_step = jax.jit(mjx.step)
 		print(f'Compilation took {time.time() - start}s.')
 
+		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
+		self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
+		self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
+		temp_data = self.jit_step(self.mjx_model, self.mjx_data)
+		self.fill_value = int((np.array(temp_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
+
 		object_pos = self.model.body(name="object_0").pos
 		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 		print(f'Target position: {self.target_pos[0]}')
 
 		self.target_rot = np.array([180, 0, 0])
-
-		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
@@ -283,9 +287,10 @@ class cem_planner():
 		theta = jnp.array(mjx_data.qpos[:self.num_dof])
 		current_position = mjx_data.xpos[self.model.body(name="hande").id]
 		current_rotation = self.quaternion_to_euler(mjx_data.xquat[self.model.body(name="hande").id])
+		# current_rotation = mjx_data.xquat[self.model.body(name="hande").id]
 		eef_pos = jnp.array(current_position)
 		eef_rot = jnp.array(current_rotation)
-		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=20, fill_value=65)].flatten()
+		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
 
@@ -307,7 +312,6 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
-		contact = jnp.sum(jnp.isin(self.geom_ids, collision))
 		w_pos = 1
 		w_rot = 0.03
 		w_col = 0.1
@@ -317,6 +321,8 @@ class cem_planner():
 
 		cost_r_ = jnp.linalg.norm(eef_rot[:,:-1] - self.target_rot[:-1], axis=1)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
+
+		contact = jnp.sum(jnp.isin(self.geom_ids, collision))
 
 		# cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
 
@@ -343,6 +349,7 @@ class cem_planner():
   
 		key, subkey = random.split(self.key)
   
+		dt_history = list()
 		time_start = time.time()
 		for i in range(0, self.maxiter_cem):
 		# for i in range(1):
@@ -360,11 +367,16 @@ class cem_planner():
 			theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot)
 			cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
 
+			# print(eef_rot[0])
+			cost_batch = jnp.nan_to_num(cost_batch)
+
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
 			res.append(jnp.min(cost_batch))
 
-			print(f"Iter #{i+1}: {round(time.time() - time_start, 2)}s")
+			dt = round(time.time() - time_start, 2)
+			dt_history.append(dt)
+			print(f"Iter #{i+1}: {dt}s \n   Cost:  {round(float(res[-1]), 2)}")
 			time_start = time.time()
 
 		idx_min = jnp.argmin(cost_batch)
@@ -377,11 +389,16 @@ class cem_planner():
 		np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
 		np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
 
-		return 0
+		return np.mean(dt_history), round(float(res[-1]), 2)
 	
 def main():
+	# num_batches = np.arange(100, 2000, 100)
+	# dt_step_history = list()
+	# dt_simulation_history = list()
+	# cost_history = list()
+	# for num_batch in num_batches:
 	num_dof = 6
-	num_batch = 500
+	num_batch = 100
 
 	opt_class =  cem_planner(num_dof, num_batch)	
 	theta_init = np.tile([1.5, -1.8, 1.75, -1.25, -1.6, 0], (num_batch, 1))
@@ -402,9 +419,19 @@ def main():
 
 	start_time = time.time()
 
-	out = opt_class.compute_cem(state_term, v_max, a_max, p_max, maxiter_projection, goal_pose)
+	dt_step, cost = opt_class.compute_cem(state_term, v_max, a_max, p_max, maxiter_projection, goal_pose)
 
-	print(f"Total time: {round(time.time()-start_time, 2)}s")
+	dt_simulation = round(time.time()-start_time, 2)
+	print(f"Total time: {dt_simulation}s")
+
+	# dt_step_history.append(dt_step)
+	# dt_simulation_history.append(dt_simulation)
+	# cost_history.append(cost)
+
+	# history = np.concatenate((dt_step_history, dt_simulation_history, cost_history, num_batches))	
+	# history = history.reshape((4, history.shape[0]//4))
+	
+	# np.savetxt('data/history.csv',history, delimiter=",")
 	
 	
 if __name__ == "__main__":

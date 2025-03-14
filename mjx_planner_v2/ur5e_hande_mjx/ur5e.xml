@@ -1,12 +1,11 @@
 <mujoco model="ur5e_1">
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
   <!-- <option cone="elliptic" impratio="10" /> -->
+  <!-- <option integrator="RK4"/> -->
 
   <option iterations="1" ls_iterations="5">
     <flag eulerdamp="disable"/>
   </option>
-
-  <!-- <option actuatorgroupdisable="0" cone="elliptic"/> -->
 
   <default>
     <default class="ur5e_1">
@@ -39,15 +38,6 @@
 
     </default>
 
-    <default class="hande">
-      <default class="hande_right_finger">
-        <joint type="slide" range="0 0.025" actuatorfrcrange="-100 100"/>
-      </default>
-      <default class="hande_left_finger">
-        <joint type="slide" range="0 0.025" actuatorfrcrange="-100 100"/>
-      </default>
-    </default>
-
   </default>
 
   <asset>
@@ -77,16 +67,11 @@
     <mesh name="wrist2_2_1" file="ur5e/wrist2_2.obj"/>
     <mesh name="wrist3_1" file="ur5e/wrist3.obj"/>
 
-    <mesh name="hande" file="hande/hande.stl"/>
-    <mesh name="coupler" file="hande/coupler.stl"/>
-    <mesh name="right_finger" file="hande/finger_1.stl"/>
-    <mesh name="left_finger" file="hande/finger_2.stl"/>
-
   </asset>
 
   <worldbody>
     <body name="table_1" pos="0 0 0.4">
-      <geom name="table_geom_1" type="box" size="0.546 0.625 0.025" rgba="0.6 0.4 0.3 1"/>
+      <geom name="table_geom_1" type="box" size="0.546 0.625 0.025" rgba="0.2 0.2 0.2 1"/>
 
       <body name="base_1" quat="1 0 0 1" childclass="ur5e_1" pos="0.386 0 0.161">
         <geom mesh="base_0_1" material="black_1" class="visual_1"/>
@@ -144,26 +129,6 @@
                     <geom material="linkgray_1" mesh="wrist3_1" class="visual_1"/>
                     <geom name="robot_9" class="collision_1" pos="0 0.08 0" quat="1 1 0 0" size="0.04 0.02"/>
                     <site name="attachment_site_1" pos="0 0.1 0" quat="-1 1 0 0"/>
-
-                    <body name="hande" pos="0 0.1 0" quat="-1 1 0 0">
-                      <geom mesh="coupler" name="hande_coupler" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
-                      <geom mesh="hande" name="hande_base" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
-                      <site name="tcp" pos="0 0 0.135"/>
-                      <geom name="robot_0" class="collision_1" pos="0 0 0.04" quat="1 0 0 1" size="0.03 0.015"/>
-
-                      <body name="hande_left_finger" pos="0 0 0.099">
-                        <inertial pos="0.02262 -0.00759 0.00738" quat="0.871952 0.0369732 -0.211073 0.440205" mass="0.03804" diaginertia="1.22763e-05 1.22763e-05 1.22763e-05"/>
-                        <joint name="hande_left_finger_joint" class="hande_left_finger" pos="0 0 0" axis="1 0 0"/>
-                        <geom mesh="left_finger" type="mesh" group="1"  contype="0" conaffinity="0" rgba="0.4 0.4 0.4 1" />
-                      </body>
-
-                      <body name="hande_right_finger" pos="0 0 0.099">
-                        <inertial pos="-0.02262 0.00759 0.00738" quat="0.871952 -0.0369732 0.211073 0.440205" mass="0.03804" diaginertia="1.22763e-05 1.22763e-05 1.22763e-05"/>
-                        <joint name="hande_right_finger_joint" class="hande_right_finger" pos="0 0 0" axis="-1 0 0"/>
-                        <geom mesh="right_finger" type="mesh" group="1"  contype="0" conaffinity="0" rgba="0.4 0.4 0.4 1"/>
-                      </body>
-
-                    </body>
                   </body>
                 </body>
               </body>
@@ -173,22 +138,6 @@
       </body>
     </body>
   </worldbody>
-
-  <contact>
-    <exclude body1="hande" body2="hande_left_finger" />
-    <exclude body1="hande" body2="hande_right_finger" />
-  </contact>
-
-  <equality>
-    <joint joint1="hande_left_finger_joint" joint2="hande_right_finger_joint" polycoef="0 1 0 0 0" />
-  </equality>
-
-  <tendon>
-    <fixed name="split">
-      <joint joint="hande_left_finger_joint" coef="0.5" />
-      <joint joint="hande_right_finger_joint" coef="0.5" />
-    </fixed>
-  </tendon>
 
   <!-- <actuator>
     <general class="size3_1" name="shoulder_pan_1" joint="shoulder_pan_joint_1" group='0'/>
