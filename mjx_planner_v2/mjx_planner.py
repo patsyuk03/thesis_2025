@@ -367,22 +367,16 @@ class cem_planner():
 			print(f"Iter #{i+1}: {round(time.time() - time_start, 2)}s")
 			time_start = time.time()
 
-		print(res)
-		np.savetxt('output_costs1.csv',res, delimiter=",")
-		
-
 		idx_min = jnp.argmin(cost_batch)
-		thetadot_best = thetadot[idx_min].reshape((self.num_dof, self.num))
-		np.savetxt('best_vels.csv',thetadot_best, delimiter=",")
-		np.savetxt('cost_g_best.csv',cost_g_batch[idx_min], delimiter=",")
-		np.savetxt('collision.csv',collision[idx_min], delimiter=",")
+		best_vels = thetadot[idx_min].reshape((self.num_dof, self.num)).T
+		best_traj = theta[idx_min].reshape((self.num_dof, self.num)).T
+		bect_cost_g = cost_g_batch[idx_min]
 
-		theta_single = theta[idx_min].reshape(self.num_dof, self.num).T
-		plt.plot(theta_single)
-		plt.legend(['joint 1', 'joint 2', 'joint 3', 'joint 4', 'joint 5', 'joint 6'], loc='upper left')
-		plt.savefig('best_traj.png')
-  
-  	
+		np.savetxt('data/output_costs.csv',res, delimiter=",")
+		np.savetxt('data/best_vels.csv',best_vels, delimiter=",")
+		np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
+		np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
+
 		return 0
 	
 def main():

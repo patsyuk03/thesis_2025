@@ -31,33 +31,23 @@ def quaternion_to_euler(quaternion):
 model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 model.opt.timestep = 0.02
-# model.opt.disableactuator = 0
 data = mujoco.MjData(model)
-# print(model.opt.disableactuator)
-# jit_step = jax.jit(mjx.step)
 
 init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 # init_joint_state = [-1.07386628, -2.21057648, -2.35288999, -1.76991373, -1.09578535, -2.99189036]
 # init_joint_state = [1.3, -0.8, 0, 0, 0, 0]
 data.qpos[:6] = init_joint_state
+
 mjx_model = mjx.put_model(model)
 mjx_data = mjx.put_data(model, data)
-# data.ctrl[:6] = data.qpos[:6]
 
-file_path = f"{os.path.dirname(__file__)}/best_vels.csv" 
-thetadot = np.genfromtxt(file_path, delimiter=',').T
+# jit_step = jax.jit(mjx.step)
+
+file_path = f"{os.path.dirname(__file__)}/data/best_vels.csv" 
+thetadot = np.genfromtxt(file_path, delimiter=',')
 # thetadot = np.tile(np.zeros(6), (300, 1))
-# thetadot[:, 1] = 0.5
 
-print(thetadot.shape)
-
-no_contact = np.zeros(4)
-# geom_names = [model.geom_names[i] for i in range(model.ngeom)]
-
-geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
-print(geom_ids)
-# [33  7 12 13 18 19 23 27 28 30]
-print(mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, 1))
+geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
 
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
@@ -69,48 +59,19 @@ with viewer.launch_passive(model, data) as viewer_:
         step_start = time.time()
         data.qvel[:6] = thetadot[i]
         # data.qpos[:6] = data.ctrl[:6]
+
+        quat_gripper = data.xquat[model.body(name="hande").id]
+
         # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
         # mjx_data = mjx_data.replace(qpos=qpos)
-        quat_gripper = data.xquat[model.body(name="hande").id]
-        # quaternion_box = data.xquat[model.body(name="object_0").id]
-        # quaternion_arm = data.xquat[model.body(name="forearm_link_1").id]
-
-        # print(quat_gripper, quaternion_arm)
-
-        # local_quat_rel = np.zeros(4)
-        # mujoco.mju_mulQuat(local_quat_rel, quaternion_arm, quaternion_arm)
-        # print(quaternion_to_euler(local_quat_rel), local_quat_rel)
-        # print(quaternion_to_euler(quat_gripper), quat_gripper)
         # mjx_data = jit_step(mjx_model, mjx_data)
+
         mujoco.mj_step(model, data)
         viewer_.sync()
 
         time_until_next_step = model.opt.timestep - (time.time() - step_start)
         if time_until_next_step > 0:
-            time.sleep(time_until_next_step)
-
-        # mjx_data = mjx.put_data(model, data)
-
-        # collision_geom = mjx_data.contact.geom
-        # collision_dist = mjx_data.contact.dist
-        # # print(collision<0)
-        # # print(collision_geom[collision<0])
-        # collision = collision_geom[collision_dist<0]
-        # print(collision)
-        # print(np.where(collision_geom==36))
-        # print(np.where(collision_geom==1))
-        # print(collision_geom[64:67])
-    
-
-        # print(len(mjx_data.contact.geom))
-        # print(data.contact)
-        # print(mujoco.mj_collision(model, data))
-        # contact = np.sum(np.isin(geom_ids, collision.flatten()))
-        # print(contact)
-
-        # if len(data.contact.geom1) != len(no_contact):
-        #     print(f"collision at step: {i}")
-        # print(len(data.contact.geom2), len(no_contact))
+            time.sleep(time_until_next_step)    
 
         if i < thetadot.shape[0]-1:
             i+=1
@@ -118,8 +79,4 @@ with viewer.launch_passive(model, data) as viewer_:
             data.qvel[:6] = np.zeros(6)
             data.qpos[:6] = init_joint_state
             mjx_data = mjx.put_data(model, data)
-
-
             i=0
-
-print(data.qpos[:6])
