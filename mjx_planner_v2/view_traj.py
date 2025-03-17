@@ -73,10 +73,10 @@ with viewer.launch_passive(model, data) as viewer_:
         if time_until_next_step > 0:
             time.sleep(time_until_next_step)    
 
-        if i < thetadot.shape[0]-1:
-            i+=1
-        else:
-            data.qvel[:6] = np.zeros(6)
-            data.qpos[:6] = init_joint_state
-            # mjx_data = mjx.put_data(model, data)
-            i=0
+        # if i < thetadot.shape[0]-1:
+        #     i+=1
+        # else:
+        #     data.qvel[:6] = np.zeros(6)
+        #     data.qpos[:6] = init_joint_state
+        #     # mjx_data = mjx.put_data(model, data)
+        #     i=0

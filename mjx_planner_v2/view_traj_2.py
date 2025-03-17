@@ -54,7 +54,7 @@ geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_
 # [33  7 12 13 18 19 23 27 28 30]
 
 scene_option = mujoco.MjvOption()
-scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
+# scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
 scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
 
 start = time.time()

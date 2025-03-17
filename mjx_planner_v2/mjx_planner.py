@@ -24,8 +24,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 4
-		self.num = 200
+		self.t_fin = 0.4
+		self.num = 20
 
 		self.t = self.t_fin/self.num
 		
@@ -75,30 +75,36 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 10
-		self.maxiter_cem = 30
+		self.maxiter_cem = 20
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
 		self.l_3 = 1.0
 		self.ellite_num = int(0.1*self.num_batch)
+
+		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+
+		self.maxiter_projection = 20
+		self.v_max = 0.8
+		self.a_max = 1.8
+		self.p_max = 180*np.pi/180
+
 		
 
 		model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
-		data = mujoco.MjData(self.model)
+		self.data = mujoco.MjData(self.model)
+		self.data.qpos[:6] = init_joint_state
 		self.model.opt.timestep = 0.02
 
 		self.mjx_model = mjx.put_model(self.model)
-		# self.mjx_data = mjx.make_data(self.model)
-		self.mjx_data = mjx.put_data(self.model, data)
-		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
-		qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		self.mjx_data = self.mjx_data.replace(qpos=qpos)
+		self.mjx_data = mjx.put_data(self.model, self.data)
+		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		# self.mjx_data = self.mjx_data.replace(qpos=qpos)
 		print("Timestep", self.mjx_model.opt.timestep)
 
+
 		print(f'Default backend: {jax.default_backend()}')
-		# jax.config.update("jax_debug_nans", True)
-		# jax.config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 		print('JIT-compiling the model physics step...')
 		start = time.time()
 		self.jit_step = jax.jit(mjx.step)
@@ -304,39 +310,23 @@ class cem_planner():
 		theta, eef_pos, eef_rot, collision = out
 		return theta.T.flatten(), eef_pos, eef_rot, collision
 	
-	# @partial(jit, static_argnums=(0,))
-	# def step(self, batched_data, thetadot):
-	# 	batched_thetadot = thetadot.reshape(self.num_batch, self.num_dof)
-	# 	batch = jax.vmap(lambda mjx_data, thetadot_single: mjx_data.replace(qvel=mjx_data.qvel.at[:self.num_dof].set(thetadot_single)))(batched_data, batched_thetadot)
-	# 	batched_data = self.jit_step_2(self.mjx_model, batch)
-	# 	theta_eef_pose = jax.vmap(lambda mjx_data_: jnp.concatenate((jnp.array(mjx_data_.qpos[:self.num_dof]), mjx_data_.xpos[self.model.body(name="hande").id])))(batched_data)
-	# 	theta, eef_pos = theta_eef_pose[:, :self.num_dof], theta_eef_pose[:, self.num_dof:]
-	# 	return batched_data, (theta.flatten(), eef_pos.flatten())
-	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
-		w_pos = 2
+		w_pos = 1
 		w_rot = 0.03
-		w_col = 0.1
-
-		# w_pos = 1
-		# w_rot = 0.03 *0
-		# w_col = 0.1 *0
+		w_col = 0.3
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+		# cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+		cost_g = jnp.sum(cost_g_)
 
 		cost_r_ = jnp.linalg.norm(eef_rot[:,:-1] - self.target_rot[:-1], axis=1)
-		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
+		# cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
+		cost_r = jnp.sum(cost_r_)
 
-		contact = jnp.sum(jnp.isin(self.geom_ids, collision))
+		cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
 
-		# cost_s = jnp.sum(jnp.linalg.norm(thetadot.reshape(self.num_dof, self.num), axis=1))
-
-		# arc_length_end = jnp.diff(eef_pos, axis = 0)
-		# cost_arc = jnp.sum(jnp.linalg.norm(arc_length_end, axis = 1))
-
-		cost = w_pos*cost_g + w_rot*cost_r + w_col*contact
+		cost = w_pos*cost_g + w_rot*cost_r + w_col*cost_c
 		return cost, cost_g_
 	
 	@partial(jit, static_argnums=(0, ))
@@ -348,7 +338,21 @@ class cem_planner():
     
 
 	# @partial(jit, static_argnums=(0,))
-	def compute_cem(self, state_term, v_max, a_max, p_max, maxiter_projection, goal_pos):
+	def compute_cem(self, init_joint_state, init_vel):
+
+		qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		qvel = self.mjx_data.qvel.at[:self.num_dof].set(init_vel)
+		self.mjx_data = self.mjx_data.replace(qpos=qpos, qvel=qvel)
+
+		theta_init = np.tile(init_joint_state, (self.num_batch, 1))
+		# thetadot_init = np.zeros((self.num_batch, self.num_dof  ))
+		thetadot_init = np.tile(init_vel, (self.num_batch, 1))
+		thetaddot_init = np.zeros((self.num_batch, self.num_dof  ))
+		thetadot_fin = np.zeros((self.num_batch, self.num_dof  ))
+		thetaddot_fin = np.zeros((self.num_batch, self.num_dof  ))
+
+		self.state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
+		self.state_term = jnp.asarray(self.state_term)
 		
 		res = []
 		xi_mean = jnp.zeros(self.nvar)
@@ -359,17 +363,11 @@ class cem_planner():
 		dt_history = list()
 		time_start = time.time()
 		for i in range(0, self.maxiter_cem):
-		# for i in range(1):
 			
 			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov ) # xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
-			xi_filtered = self.compute_projection_filter(xi_samples, state_term, maxiter_projection, v_max, a_max, p_max)
+			xi_filtered = self.compute_projection_filter(xi_samples, self.state_term, self.maxiter_projection, self.v_max, self.a_max, self.p_max)
 			theta_batch = jnp.dot(self.A_theta, xi_filtered.T).T 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
-
-			# batched_data = jax.vmap(lambda _, x: x, in_axes=(0, None))(jnp.arange(self.num_batch), self.mjx_data)
-			# _, out = jax.lax.scan(self.step, batched_data, thetadot.reshape(self.num_batch*self.num_dof, self.num).T, length=self.num)
-			# theta, eef_pos = out
-			# theta = theta.T.reshape(self.num_batch, self.num_dof*self.num)
 
 			theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot)
 			cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
@@ -382,7 +380,7 @@ class cem_planner():
 
 			dt = round(time.time() - time_start, 2)
 			dt_history.append(dt)
-			print(f"Iter #{i+1}: {dt}s \n   Cost:  {round(float(res[-1]), 2)}")
+			# print(f"Iter #{i+1}: {dt}s \n   Cost:  {round(float(res[-1]), 2)}")
 			time_start = time.time()
 
 		idx_min = jnp.argmin(cost_batch)
@@ -390,12 +388,13 @@ class cem_planner():
 		best_traj = theta[idx_min].reshape((self.num_dof, self.num)).T
 		bect_cost_g = cost_g_batch[idx_min]
 
-		np.savetxt('data/output_costs.csv',res, delimiter=",")
-		np.savetxt('data/best_vels.csv',best_vels, delimiter=",")
-		np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
-		np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
+		# np.savetxt('data/output_costs.csv',res, delimiter=",")
+		# np.savetxt('data/best_vels.csv',best_vels, delimiter=",")
+		# np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
+		# np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
 
-		return np.mean(dt_history), round(float(res[-1]), 2)
+		# return np.mean(dt_history), round(float(res[-1]), 2)
+		return jnp.mean(best_vels, axis=0), round(float(res[-1]), 2)
 	
 def main():
 	# num_batches = np.arange(100, 2000, 100)
@@ -404,28 +403,13 @@ def main():
 	# cost_history = list()
 	# for num_batch in num_batches:
 	num_dof = 6
-	num_batch = 1000
+	num_batch = 500
 
 	opt_class =  cem_planner(num_dof, num_batch)	
-	theta_init = np.tile([1.5, -1.8, 1.75, -1.25, -1.6, 0], (num_batch, 1))
-	thetadot_init = np.zeros((num_batch, num_dof  ))
-	thetaddot_init = np.zeros((num_batch, num_dof  ))
-	thetadot_fin = np.zeros((num_batch, num_dof  ))
-	thetaddot_fin = np.zeros((num_batch, num_dof  ))
-
-	state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
-	state_term = jnp.asarray(state_term)
-
-	goal_pose = jnp.hstack(( 1.0, 1.0 ))
-
-	maxiter_projection = 20
-	v_max = 0.8
-	a_max = 1.8
-	p_max = 180*np.pi/180
 
 	start_time = time.time()
 
-	dt_step, cost = opt_class.compute_cem(state_term, v_max, a_max, p_max, maxiter_projection, goal_pose)
+	_ = opt_class.compute_cem([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 
 	dt_simulation = round(time.time()-start_time, 2)
 	print(f"Total time: {dt_simulation}s")
