@@ -24,8 +24,8 @@ class cem_planner():
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 0.4
-		self.num = 20
+		self.t_fin = 0.2
+		self.num = 10
 
 		self.t = self.t_fin/self.num
 		
@@ -75,7 +75,7 @@ class cem_planner():
 
 		self.key = key
 		self.maxiter_projection = 10
-		self.maxiter_cem = 20
+		self.maxiter_cem = 5
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
@@ -84,12 +84,6 @@ class cem_planner():
 
 		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 
-		self.maxiter_projection = 20
-		self.v_max = 0.8
-		self.a_max = 1.8
-		self.p_max = 180*np.pi/180
-
-		
 
 		model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 		self.model = mujoco.MjModel.from_xml_path(model_path)
@@ -312,13 +306,13 @@ class cem_planner():
 	
 	@partial(jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
-		w_pos = 1
+		w_pos = 0.5
 		w_rot = 0.03
 		w_col = 0.3
 
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		# cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
-		cost_g = jnp.sum(cost_g_)
+		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+		cost_g = jnp.sum(cost_g)
 
 		cost_r_ = jnp.linalg.norm(eef_rot[:,:-1] - self.target_rot[:-1], axis=1)
 		# cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
@@ -351,8 +345,13 @@ class cem_planner():
 		thetadot_fin = np.zeros((self.num_batch, self.num_dof  ))
 		thetaddot_fin = np.zeros((self.num_batch, self.num_dof  ))
 
-		self.state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
-		self.state_term = jnp.asarray(self.state_term)
+		state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
+		state_term = jnp.asarray(state_term)
+
+		maxiter_projection = 20
+		v_max = 0.8
+		a_max = 1.8
+		p_max = 180*np.pi/180
 		
 		res = []
 		xi_mean = jnp.zeros(self.nvar)
@@ -365,14 +364,14 @@ class cem_planner():
 		for i in range(0, self.maxiter_cem):
 			
 			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov ) # xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
-			xi_filtered = self.compute_projection_filter(xi_samples, self.state_term, self.maxiter_projection, self.v_max, self.a_max, self.p_max)
+			xi_filtered = self.compute_projection_filter(xi_samples, state_term, maxiter_projection, v_max, a_max, p_max)
 			theta_batch = jnp.dot(self.A_theta, xi_filtered.T).T 
 			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
 
 			theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot)
 			cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
 
-			cost_batch = jnp.nan_to_num(cost_batch)
+			# cost_batch = jnp.nan_to_num(cost_batch)
 
 			xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 			xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
@@ -394,7 +393,8 @@ class cem_planner():
 		# np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
 
 		# return np.mean(dt_history), round(float(res[-1]), 2)
-		return jnp.mean(best_vels, axis=0), round(float(res[-1]), 2)
+		return best_vels[1]
+		# return jnp.mean(best_vels, axis=0)
 	
 def main():
 	# num_batches = np.arange(100, 2000, 100)
@@ -409,7 +409,7 @@ def main():
 
 	start_time = time.time()
 
-	_ = opt_class.compute_cem([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+	_ = opt_class.compute_cem([1.5, -1.8, 1.75, -1.25, -1.6, 0], [0]*6)
 
 	dt_simulation = round(time.time()-start_time, 2)
 	print(f"Total time: {dt_simulation}s")

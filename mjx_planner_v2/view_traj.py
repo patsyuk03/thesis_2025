@@ -46,6 +46,7 @@ data.qpos[:6] = init_joint_state
 file_path = f"{os.path.dirname(__file__)}/data/best_vels.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',')
 # thetadot = np.tile(np.zeros(6), (300, 1))
+# print(thetadot[1])
 
 geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
 
@@ -73,10 +74,10 @@ with viewer.launch_passive(model, data) as viewer_:
         if time_until_next_step > 0:
             time.sleep(time_until_next_step)    
 
-        # if i < thetadot.shape[0]-1:
-        #     i+=1
-        # else:
-        #     data.qvel[:6] = np.zeros(6)
-        #     data.qpos[:6] = init_joint_state
-        #     # mjx_data = mjx.put_data(model, data)
-        #     i=0
+        if i < thetadot.shape[0]-1:
+            i+=1
+        else:
+            data.qvel[:6] = np.zeros(6)
+            data.qpos[:6] = init_joint_state
+            # mjx_data = mjx.put_data(model, data)
+            i=0
