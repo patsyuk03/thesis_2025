@@ -30,7 +30,7 @@ def quaternion_to_euler(quaternion):
 
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
-model.opt.timestep = 0.02
+model.opt.timestep = 0.04
 data = mujoco.MjData(model)
 
 init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
