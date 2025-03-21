@@ -16,13 +16,19 @@ import time
 
 class cem_planner():
 
-	def __init__(self, num_dof=6, num_batch=100, num_steps=200, timestep=0.02, maxiter_cem=20):
+	def __init__(self, num_dof=6, num_batch=100, num_steps=200, timestep=0.02, maxiter_cem=20, num_elite=0.1, w_pos=2, w_rot=0.03, w_col=0.1):
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
 		self.num_batch = num_batch
 		self.t = timestep
 		self.num = num_steps
+		self.num_elite = num_elite
+		self.cost_weights = {
+			'w_pos': w_pos,
+			'w_rot': w_rot,
+			'w_col': w_col,
+		}
 
 		self.t_fin = self.num*self.t
 		
@@ -77,7 +83,7 @@ class cem_planner():
 		self.l_1 = 1.0
 		self.l_2 = 1.0
 		self.l_3 = 1.0
-		self.ellite_num = int(0.1*self.num_batch)
+		self.ellite_num = int(self.num_elite*self.num_batch)
 
 		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 
@@ -89,15 +95,16 @@ class cem_planner():
 
 		self.mjx_model = mjx.put_model(self.model)
 		self.mjx_data = mjx.put_data(self.model, self.data)
+		self.mjx_data = jax.jit(mjx.forward)(self.mjx_model, self.mjx_data)
 
 		self.jit_step = jax.jit(mjx.step)
 
 		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
 		self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
 		self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
-		temp_data = self.jit_step(self.mjx_model, self.mjx_data)
-		temp_data = jax.jit(mjx.forward)(self.mjx_model, self.mjx_data)
-		self.fill_value = int((np.array(temp_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
+		# temp_data = self.jit_step(self.mjx_model, self.mjx_data)
+		# temp_data = jax.jit(mjx.forward)(self.mjx_model, self.mjx_data)
+		self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
 
 		object_pos = self.model.body(name="object_0").pos
 		object_pos[-1] += 0.3
@@ -275,10 +282,6 @@ class cem_planner():
 	
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
-		w_pos = 2
-		w_rot = 0.03
-		w_col = 0.1
-
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
 
@@ -287,7 +290,7 @@ class cem_planner():
 
 		cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
 
-		cost = w_pos*cost_g + w_rot*cost_r + w_col*cost_c
+		cost = self.cost_weights['w_pos']*cost_g + self.cost_weights['w_rot']*cost_r + self.cost_weights['w_col']*cost_c
 		return cost, cost_g_
 	
 	@partial(jax.jit, static_argnums=(0, ))
@@ -318,11 +321,11 @@ class cem_planner():
     
 
 	@partial(jax.jit, static_argnums=(0,))
-	def compute_cem(self, init_joint_state, init_vel, init_acc):
+	def compute_cem(self, init_joint_state=jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), init_vel=jnp.zeros(6), init_acc=jnp.zeros(6)):
 
-		qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
-		qvel = self.mjx_data.qvel.at[:self.num_dof].set(init_vel)
-		self.mjx_data = self.mjx_data.replace(qpos=qpos, qvel=qvel)
+		# qpos = self.mjx_data.qpos.at[:self.num_dof].set(init_joint_state)
+		# qvel = self.mjx_data.qvel.at[:self.num_dof].set(init_vel)
+		# self.mjx_data = self.mjx_data.replace(qpos=qpos, qvel=qvel)
 
 		theta_init = jnp.tile(init_joint_state, (self.num_batch, 1))
 		thetadot_init = jnp.tile(init_vel, (self.num_batch, 1))
@@ -346,19 +349,19 @@ class cem_planner():
 		cost = jnp.min(cost_batch, axis=1)
 		best_vels = thetadot[-1][idx_min].reshape((self.num_dof, self.num)).T
 		best_traj = theta[-1][idx_min].reshape((self.num_dof, self.num)).T
-		bect_cost_g = cost_g_batch[-1][idx_min]
+		best_cost_g = cost_g_batch[-1][idx_min]
 
-		return cost, bect_cost_g, best_vels, best_traj
+		return cost, best_cost_g, best_vels, best_traj
 	
 def main():
 	num_dof = 6
 	num_batch = 500
 
 	start_time = time.time()
-	opt_class = cem_planner(num_dof, num_batch)	
-	
+	opt_class = cem_planner(num_dof, num_batch, w_pos=3, num_elite=0.1, maxiter_cem=30)	
+
 	start_time_comp_cem = time.time()
-	cost, bect_cost_g, best_vels, best_traj = opt_class.compute_cem(jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), jnp.array([0]*6), jnp.array([0]*6))
+	cost, best_cost_g, best_vels, best_traj = opt_class.compute_cem(jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), jnp.array([0]*6), jnp.array([0]*6))
 
 	print(f"Total time: {round(time.time()-start_time, 2)}s")
 	print(f"Compute CEM time: {round(time.time()-start_time_comp_cem, 2)}s")
@@ -366,7 +369,7 @@ def main():
 	np.savetxt('data/output_costs.csv',cost, delimiter=",")
 	np.savetxt('data/best_vels.csv',best_vels, delimiter=",")
 	np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
-	np.savetxt('data/best_cost_g.csv',bect_cost_g, delimiter=",")
+	np.savetxt('data/best_cost_g.csv',best_cost_g, delimiter=",")
 
 	
 	
