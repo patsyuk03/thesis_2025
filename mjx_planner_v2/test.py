@@ -2,16 +2,16 @@ import numpy as np
 import os
 
 
-# file_path = f"{os.path.dirname(__file__)}/collision.csv" 
-# collision = np.genfromtxt(file_path, delimiter=',')
+xi_mean = np.zeros(6)
+xi_cov = 5*np.identity(6)
 
-# print(collision.shape)
-# print(collision[0])
+print(xi_mean)
 
-a = np.array([1,1,1])
-b = np.array([2,2,2])
+print(xi_cov)
 
-c = np.concatenate((a,b), axis=0)
-c = c.reshape((2, c.shape[0]//2))
+xi_mean_cov = np.vstack((xi_mean, xi_cov))
 
-print(c)
+print(xi_mean_cov)
+
+print(xi_mean_cov[0])
+print(xi_mean_cov[1:])

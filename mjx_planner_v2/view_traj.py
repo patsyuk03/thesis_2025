@@ -46,6 +46,7 @@ data.qpos[:6] = init_joint_state
 file_path = f"{os.path.dirname(__file__)}/data/best_vels.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',')
 # thetadot = np.tile(np.zeros(6), (300, 1))
+# thetadot[:,2] = -0.9
 # print(thetadot[1])
 
 geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
