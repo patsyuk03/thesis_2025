@@ -21,7 +21,7 @@ cem =  cem_planner(
     maxiter_cem=5,
     w_pos=5,
     w_rot=2,
-    w_col=10,
+    w_col=5,
     num_elite=0.01,
     timestep=0.04
     )

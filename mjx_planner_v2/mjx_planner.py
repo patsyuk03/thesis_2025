@@ -99,9 +99,10 @@ class cem_planner():
 		self.jit_step = jax.jit(mjx.step)
 
 		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
-		self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
-		self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
-		self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
+		# self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
+		# self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
+		# self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
+		self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
 
 		self.target_pos = self.model.body(name="object_0").pos
 		self.target_pos[-1] += 0.3
@@ -252,7 +253,7 @@ class cem_planner():
 	 
 		return primal_sol
 
-	
+	@partial(jax.jit, static_argnums=(0,))
 	def mjx_step(self, mjx_data, thetadot_single):
 		qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single)
 		mjx_data = mjx_data.replace(qvel=qvel)
@@ -260,7 +261,9 @@ class cem_planner():
 		theta = mjx_data.qpos[:self.num_dof]
 		eef_pos = mjx_data.xpos[self.hande_id]
 		eef_rot = mjx_data.xquat[self.hande_id]
-		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
+		# collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
+		
+		collision = jnp.sum(jnp.abs(mjx_data.contact.dist[self.mask]-1))
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
 
@@ -285,7 +288,8 @@ class cem_planner():
 		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
 
-		cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
+		# cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
+		cost_c = jnp.max(collision)
 
 		cost = self.cost_weights['w_pos']*cost_g + self.cost_weights['w_rot']*cost_r + self.cost_weights['w_col']*cost_c
 		return cost, cost_g_
