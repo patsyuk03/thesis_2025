@@ -1,23 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 
-# Create the figure and axis
-fig, ax = plt.subplots()
-xdata, ydata = [], []
-line, = ax.plot([], [], 'r-')
+def quaternion_distance(q1, q2):
 
-# Initialize the plot
-ax.set_xlim(0, 10)
-ax.set_ylim(-1, 1)
+    dot_product = np.abs(np.dot(q1/np.linalg.norm(q1, axis=1).reshape(1, 5).T, q2/np.linalg.norm(q2)))
+    print(q1.shape, np.linalg.norm(q1, axis=1).T.shape)
+    return 2 * np.arccos(dot_product)
 
-def update(frame):
-    xdata.append(frame / 10)
-    ydata.append(np.sin(frame / 10 * 2 * np.pi))
-    line.set_data(xdata, ydata)
-    return line,
 
-# Create the animation
-ani = FuncAnimation(fig, update, frames=range(100), blit=True)
 
-plt.show()
+q1 = np.tile(np.array([1, 0, 1, 0]), (5, 1))
+# q1 = np.array([1, 0, 1, 0], dtype=float)
+q2 = np.array([1, 0, 1, 0], dtype=float)
+
+# print(q1)
+
+
+a = quaternion_distance(q1, q2)
+print(a)

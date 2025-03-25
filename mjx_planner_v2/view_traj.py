@@ -6,42 +6,9 @@ import numpy as np
 import time
 import jax
 
-# def quaternion_to_euler(quaternion):
-#     w, x, y, z = quaternion
-#     ysqr = y * y
-
-#     t0 = +2.0 * (w * x + y * z)
-#     t1 = +1.0 - 2.0 * (x * x + ysqr)
-#     X = np.rad2deg(np.arctan2(t0, t1))
-
-#     t2 = +2.0 * (w * y - z * x)
-
-#     t2 = np.clip(t2, a_min=-1.0, a_max=1.0)
-#     Y = np.rad2deg(np.arcsin(t2))
-
-#     t3 = +2.0 * (w * z + x * y)
-#     t4 = +1.0 - 2.0 * (ysqr + z * z)
-#     Z = np.rad2deg(np.arctan2(t3, t4))
-
-#     euler = np.round(np.array([X,Y,Z]), 2)
-
-#     return euler
-
-def log_map_rotation_matrix(R):
-    theta = np.arccos(np.clip((np.trace(R) - 1) / 2, -1.0, 1.0))
-    if np.isclose(theta, 0):
-        return np.zeros((3, 3))
-    elif np.isclose(theta, np.pi):
-        w = np.sqrt((np.diag(R) + 1) / 2)
-        w[np.isnan(w)] = 0
-        skew_w = np.array([
-            [0, -w[2], w[1]],
-            [w[2], 0, -w[0]],
-            [-w[1], w[0], 0]
-        ])
-        return np.pi * skew_w
-    else:
-        return (theta / (2 * np.sin(theta))) * (R - R.T)
+def quaternion_distance(q1, q2):
+    dot_product = np.abs(np.dot(q1, q2))
+    return 2 * np.arccos(dot_product)
 
 
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
@@ -53,7 +20,7 @@ init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 # init_joint_state = [-1.07386628, -2.21057648, -2.35288999, -1.76991373, -1.09578535, -2.99189036]
 # init_joint_state = [1.3, -0.8, 0, 0, 0, 0]
 data.qpos[:6] = init_joint_state
-# data.ctrl[:6] = init_joint_state
+data.ctrl[:6] = init_joint_state
 
 mjx_model = mjx.put_model(model)
 mjx_data = mjx.put_data(model, data)
@@ -76,8 +43,8 @@ with viewer.launch_passive(model, data) as viewer_:
     i = 0
     while viewer_.is_running():
         step_start = time.time()
-        data.qvel[:6] = thetadot[i]
-        # data.qpos[:6] = data.ctrl[:6]
+        # data.qvel[:6] = thetadot[i]
+        data.qpos[:6] = data.ctrl[:6]
 
         # quat_gripper = data.xquat[model.body(name="hande").id]
 
@@ -86,11 +53,11 @@ with viewer.launch_passive(model, data) as viewer_:
         # mjx_data = jit_step(mjx_model, mjx_data)
 
         rot_matrix = data.xmat[model.body(name="hande").id].reshape(3,3)
-        print(mjx_data.xmat[model.body(name="hande").id].shape)
+        # print(mjx_data.xmat[model.body(name="hande").id].shape)
         # rot_matrix = log_map_rotation_matrix(rot_matrix)
         rot_matrix = np.round(rot_matrix, 1)
         # rot_matrix = data.xmat[model.body(name="wrist_3_link_1").id].reshape(3,3).T @ rot_matrix
-        print(mjx_data.xmat[model.body(name="hande").id])
+        print(rot_matrix)
 
         mujoco.mj_step(model, data)
         viewer_.sync()

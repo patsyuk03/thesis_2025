@@ -103,11 +103,10 @@ class cem_planner():
 		self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
 		self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
 
-		object_pos = self.model.body(name="object_0").pos
-		object_pos[-1] += 0.3
-		self.target_pos = np.tile(object_pos, (self.num, 1))
+		self.target_pos = self.model.body(name="object_0").pos
+		self.target_pos[-1] += 0.3
 
-		self.target_rot = np.array([0, 0, -1])
+		self.target_rot = self.quaternion_multiply(self.mjx_data.xquat[self.model.body(name="object_0").id], [0, 1, 0, 0])
 
 		self.hande_id = self.model.body(name="hande").id
 
@@ -122,13 +121,27 @@ class cem_planner():
 			f'\n Default backend: {jax.default_backend()}'
 			f'\n Model path: {self.model_path}',
 			f'\n Timestep: {self.t}',
-			f'\n Target position: {self.target_pos[0]}',
+			f'\n Target position: {self.target_pos}',
+			f'\n Target orientation: {self.target_rot}',
 			f'\n CEM Iter: {self.maxiter_cem}',
 			f'\n Number of batches: {self.num_batch}',
 			f'\n Number of steps per trajectory: {self.num}',
 			f'\n Time per trajectory: {self.t_fin}',
 		)
-	
+
+		
+	def quaternion_multiply(self, q1, q2):
+		"""Multiply two quaternions q1 * q2"""
+		w1, x1, y1, z1 = q1
+		w2, x2, y2, z2 = q2
+		
+		w = w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1
+		x = w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1
+		y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
+		z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
+		
+		return jnp.array([w, x, y, z])
+		
   
 	def get_A_traj(self):
 		A_theta = np.kron(np.identity(self.num_dof), self.P )
@@ -238,31 +251,15 @@ class cem_planner():
 			primal_sol, s_v, s_a, s_p,  lamda_v, lamda_a, lamda_p, res_projection  = self.compute_projection(lamda_v, lamda_a, lamda_p, s_v, s_a, s_p,b_eq_term,  xi_samples)
 	 
 		return primal_sol
-	
-	@partial(jax.jit, static_argnums=(0,))
-	def quaternion_to_euler(self, quaternion):
-		w, x, y, z = quaternion
-		ysqr = y * y
-		t0 = +2.0 * (w * x + y * z)
-		t1 = +1.0 - 2.0 * (x * x + ysqr)
-		X = jnp.rad2deg(jnp.arctan2(t0, t1))
-		t2 = +2.0 * (w * y - z * x)
-		t2 = jnp.clip(t2, a_min=-1.0, a_max=1.0)
-		Y = jnp.rad2deg(jnp.arcsin(t2))
-		t3 = +2.0 * (w * z + x * y)
-		t4 = +1.0 - 2.0 * (ysqr + z * z)
-		Z = jnp.rad2deg(jnp.arctan2(t3, t4))
-		euler = jnp.round(jnp.array([X,Y,Z]), 2)
-		return euler
 
-	@partial(jax.jit, static_argnums=(0,))
+	
 	def mjx_step(self, mjx_data, thetadot_single):
 		qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single)
 		mjx_data = mjx_data.replace(qvel=qvel)
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
 		theta = mjx_data.qpos[:self.num_dof]
 		eef_pos = mjx_data.xpos[self.hande_id]
-		eef_rot = mjx_data.xmat[self.hande_id][2]
+		eef_rot = mjx_data.xquat[self.hande_id]
 		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
@@ -283,7 +280,9 @@ class cem_planner():
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
 		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*1
 
-		cost_r_ = jnp.linalg.norm(eef_rot - self.target_rot, axis=1)
+		dot_product = jnp.abs(jnp.dot(eef_rot/jnp.linalg.norm(eef_rot, axis=1).reshape(1, self.num).T, self.target_rot/jnp.linalg.norm(self.target_rot)))
+		dot_product = jnp.clip(dot_product, -1.0, 1.0)
+		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
 
 		cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
