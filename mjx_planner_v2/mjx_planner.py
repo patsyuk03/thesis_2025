@@ -107,7 +107,7 @@ class cem_planner():
 		object_pos[-1] += 0.3
 		self.target_pos = np.tile(object_pos, (self.num, 1))
 
-		self.target_rot = np.array([180, 0, 0])
+		self.target_rot = np.array([0, 0, -1])
 
 		self.hande_id = self.model.body(name="hande").id
 
@@ -260,11 +260,9 @@ class cem_planner():
 		qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single)
 		mjx_data = mjx_data.replace(qvel=qvel)
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
-		theta = jnp.array(mjx_data.qpos[:self.num_dof])
-		current_position = mjx_data.xpos[self.hande_id]
-		current_rotation = self.quaternion_to_euler(mjx_data.xquat[self.hande_id])
-		eef_pos = jnp.array(current_position)
-		eef_rot = jnp.array(current_rotation)
+		theta = mjx_data.qpos[:self.num_dof]
+		eef_pos = mjx_data.xpos[self.hande_id]
+		eef_rot = mjx_data.xmat[self.hande_id][2]
 		collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
@@ -283,10 +281,10 @@ class cem_planner():
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
 		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
-		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*0.001
+		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*1
 
-		cost_r_ = jnp.linalg.norm(eef_rot[:,:-1] - self.target_rot[:-1], axis=1)
-		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*0.0001
+		cost_r_ = jnp.linalg.norm(eef_rot - self.target_rot, axis=1)
+		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
 
 		cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
 
