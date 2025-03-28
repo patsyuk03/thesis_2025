@@ -102,7 +102,12 @@ class cem_planner():
 		# self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
 		# self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
 		# self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
-		self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask_robot_object = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		self.mask = jnp.sum(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask[self.mask==2] = 0
+		self.mask = jnp.where(self.mask==2, 0, self.mask)
+		self.mask = self.mask.astype(bool)
 
 		self.target_pos = self.model.body(name="object_0").pos
 		self.target_pos[-1] += 0.3
@@ -263,7 +268,7 @@ class cem_planner():
 		eef_rot = mjx_data.xquat[self.hande_id]
 		# collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
 		
-		collision = jnp.sum(jnp.abs(mjx_data.contact.dist[self.mask]-1))
+		collision = mjx_data.contact.dist[self.mask]
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
 
@@ -287,12 +292,22 @@ class cem_planner():
 		dot_product = jnp.clip(dot_product, -1.0, 1.0)
 		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
+		# cost_r=0
 
 		# cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
-		cost_c = jnp.max(collision)
+		# cost_c = jnp.max(collision)
+		y = 5
+		collision = collision.T
+		# collision = jnp.where(collision<0, 0, collision)
+		# collision = jnp.where(collision>0, 0, collision)
+		# collision = jnp.clip(collision, 0.0, 1.0)
+		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
+		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
+		# collision = 1-collision
+		# cost_c = jnp.sum(jnp.where(collision<0, True, False))
 
 		cost = self.cost_weights['w_pos']*cost_g + self.cost_weights['w_rot']*cost_r + self.cost_weights['w_col']*cost_c
-		return cost, cost_g_
+		return cost, cost_g_, cost_c
 	
 	@partial(jax.jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
@@ -311,21 +326,22 @@ class cem_planner():
 		thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
 
 		theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot, init_pos, init_vel)
-		cost_batch, cost_g_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
+		cost_batch, cost_g_batch, cost_c_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
 
 		xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
 		xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
 
 		carry = (init_pos, init_vel, xi_mean, xi_cov, key, state_term)
-		return carry, (cost_batch, cost_g_batch, thetadot, theta)
+		return carry, (cost_batch, cost_g_batch, cost_c_batch, thetadot, theta)
 	
     
 
 	@partial(jax.jit, static_argnums=(0,))
-	def compute_cem(self, xi_mean, init_pos=jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), init_vel=jnp.zeros(6)):
+	def compute_cem(self, xi_mean, init_pos=jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), init_vel=jnp.zeros(6), init_acc=jnp.zeros(6)):
 		theta_init = jnp.tile(init_pos, (self.num_batch, 1))
 		thetadot_init = jnp.tile(init_vel, (self.num_batch, 1))
-		thetaddot_init = jnp.zeros((self.num_batch, self.num_dof  ))
+		thetaddot_init = jnp.tile(init_acc, (self.num_batch, 1))
+		# thetaddot_init = jnp.zeros((self.num_batch, self.num_dof  ))
 		thetadot_fin = jnp.zeros((self.num_batch, self.num_dof  ))
 		thetaddot_fin = jnp.zeros((self.num_batch, self.num_dof  ))
 
@@ -339,15 +355,16 @@ class cem_planner():
 		carry = (init_pos, init_vel, xi_mean, xi_cov, key, state_term)
 		scan_over = jnp.array([0]*self.maxiter_cem)
 		carry, out = jax.lax.scan(self.cem_iter, carry, scan_over, length=self.maxiter_cem)
-		cost_batch, cost_g_batch, thetadot, theta = out
+		cost_batch, cost_g_batch, cost_c_batch, thetadot, theta = out
 
 		idx_min = jnp.argmin(cost_batch[-1])
 		cost = jnp.min(cost_batch, axis=1)
 		best_vels = thetadot[-1][idx_min].reshape((self.num_dof, self.num)).T
 		best_traj = theta[-1][idx_min].reshape((self.num_dof, self.num)).T
 		best_cost_g = cost_g_batch[-1][idx_min]
+		best_cost_c = cost_c_batch[-1][idx_min]
 
-		return cost, best_cost_g, best_vels, best_traj, carry[2]
+		return cost, best_cost_g, best_cost_c, best_vels, best_traj, carry[2]
 	
 def main():
 	num_dof = 6
