@@ -10,6 +10,24 @@ def quaternion_distance(q1, q2):
     dot_product = np.abs(np.dot(q1, q2))
     return 2 * np.arccos(dot_product)
 
+def rotation_quaternion(angle_deg, axis):
+    axis = axis / np.linalg.norm(axis)
+    angle_rad = np.deg2rad(angle_deg)
+    w = np.cos(angle_rad / 2)
+    x, y, z = axis * np.sin(angle_rad / 2)
+    return (w, x, y, z)
+
+def quaternion_multiply(q1, q2):
+		w1, x1, y1, z1 = q1
+		w2, x2, y2, z2 = q2
+		
+		w = w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1
+		x = w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1
+		y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
+		z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
+		
+		return (w, x, y, z)
+
 
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
@@ -17,8 +35,7 @@ model.opt.timestep = 0.05
 data = mujoco.MjData(model)
 
 init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
-# init_joint_state = [-1.07386628, -2.21057648, -2.35288999, -1.76991373, -1.09578535, -2.99189036]
-# init_joint_state = [1.3, -0.8, 0, 0, 0, 0]
+
 data.qpos[:6] = init_joint_state
 # data.ctrl[:6] = init_joint_state
 
@@ -31,58 +48,60 @@ data.qpos[:6] = init_joint_state
 file_path = f"{os.path.dirname(__file__)}/data/thetadot.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',')
 # thetadot = np.tile(np.zeros(6), (300, 1))
-# thetadot[:,2] = -0.9
-# print(thetadot[1])
-prev_dist = 0
-prev_dist_obst = 0
+
+target_positions = [
+    [-0.3, 0.0, 1.0],
+    [-0.3, 0.3, 0.8],
+    [-0.2, -0.4, 1.0],
+    [-0.3, -0.1, 0.8],
+]
+# target_rotations = [
+#     # [0., -0.9393727, 0.3428978, 0.0],
+#     # [-0.819, 0.573, 0.0, 0.0],
+#     # [-0.819,  -0.298,  0.490, 0.0],
+#     [-0.823, 0.270,  -0.465, 0.184],
+# ]
+
+rotation_quat_x = rotation_quaternion(90, np.array([0,0,1]))
+rotation_quat_z = rotation_quaternion(90, np.array([0,0,1]))
+result_quat = quaternion_multiply(rotation_quat_x, rotation_quat_z)
+target_rotations = [
+    rotation_quaternion(180, np.array([0,1,0])),
+    quaternion_multiply(rotation_quaternion(180, np.array([0,1,0])), rotation_quaternion(45, np.array([1,0,0]))),
+    quaternion_multiply(rotation_quaternion(180, np.array([0,1,0])), rotation_quaternion(-45, np.array([1,0,0]))),
+    rotation_quaternion(-90, np.array([0,1,0])),
+]
+
+
 
 geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
 n=0
+idx = 0
+model.body(name="target").pos = target_positions[idx]
+model.body(name="target").quat = target_rotations[idx]
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
     viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
+    viewer_.opt.sitegroup[:] = False  
+    viewer_.opt.sitegroup[1] = True 
 
     start = time.time()
     i = 0
     while viewer_.is_running():
+        n+=1
         step_start = time.time()
-        data.qvel[:6] = thetadot[i]
+        # data.qvel[:6] = thetadot[i]
         # data.qpos[:6] = data.ctrl[:6]
-
-        # quat_gripper = data.xquat[model.body(name="hande").id]
 
         # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
         # mjx_data = mjx_data.replace(qpos=qpos)
         # mjx_data = jax_forward(mjx_model, mjx_data)
 
-        # print(mjx_data.contact.dist)
-        y = 0
-        # mask = np.any(np.isin(mjx_data.contact.geom,geom_ids), axis=1)
-        # print(np.isin(mjx_data.contact.geom, geom_ids))
-        # print(np.sum(np.isin(mjx_data.contact.geom, geom_ids), axis=1))
-        # mask = np.sum(np.isin(mjx_data.contact.geom, geom_ids), axis=1)
-        # mask[mask==2] = 0
-        # mask = mask.astype(bool)
-        # eef_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'robot_6')
-        # obst_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'body_3')
-        # print(eef_id, obst_id)
-        # print(mask)
-        # print(mjx_data.contact.geom)
-        # print(mjx_data.contact.geom[mask])
-        # eef_obst = int((np.array(mjx_data.contact.geom.tolist()) == (eef_id,obst_id)).all(axis=1).nonzero()[0][0])
-        # dist = mjx_data.contact.dist[mask]
-        # dist_obst = mjx_data.contact.dist[eef_obst]
-        # dist = np.where(dist<0, 0, dist)
-        # g = -dist+prev_dist-y*(dist-prev_dist)
-        # g_obst = -dist_obst+prev_dist_obst-y*prev_dist_obst
-        # cost_c = np.sum(np.max(g.reshape(g.shape[0], 1), axis=-1, initial=0))
-        # if g_obst!=0:
-            # print(n, np.max(g)*100000, dist[np.argmax(g)], prev_dist[np.argmax(g)], cost_c*100000)
-            # n+=1
-
-            # print(n, dist_obst, prev_dist_obst, g_obst)
-        # prev_dist = dist
-        # prev_dist_obst = dist_obst
+        # if n%50==0:
+        #     model.body(name="target").pos = target_positions[idx]
+        #     model.body(name="target").quat = target_rotations[idx]
+        #     if idx<len(target_positions)-1:
+        #         idx+=1
 
         mujoco.mj_step(model, data)
         viewer_.sync()
@@ -96,5 +115,4 @@ with viewer.launch_passive(model, data) as viewer_:
         else:
             data.qvel[:6] = np.zeros(6)
             data.qpos[:6] = init_joint_state
-            # mjx_data = mjx.put_data(model, data)
             i=0
