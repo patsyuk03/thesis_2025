@@ -56,7 +56,7 @@ with viewer.launch_passive(model, data) as viewer_:
         # mjx_data = jax_forward(mjx_model, mjx_data)
 
         # print(mjx_data.contact.dist)
-        # y = 1
+        y = 0
         # mask = np.any(np.isin(mjx_data.contact.geom,geom_ids), axis=1)
         # print(np.isin(mjx_data.contact.geom, geom_ids))
         # print(np.sum(np.isin(mjx_data.contact.geom, geom_ids), axis=1))
@@ -74,13 +74,13 @@ with viewer.launch_passive(model, data) as viewer_:
         # dist_obst = mjx_data.contact.dist[eef_obst]
         # dist = np.where(dist<0, 0, dist)
         # g = -dist+prev_dist-y*(dist-prev_dist)
-        # g_obst = -dist_obst+prev_dist_obst-y*(dist_obst-prev_dist_obst)
+        # g_obst = -dist_obst+prev_dist_obst-y*prev_dist_obst
         # cost_c = np.sum(np.max(g.reshape(g.shape[0], 1), axis=-1, initial=0))
-        # if cost_c!=0:
-        #     print(n, np.max(g)*100000, dist[np.argmax(g)], prev_dist[np.argmax(g)], cost_c*100000)
-        #     n+=1
+        # if g_obst!=0:
+            # print(n, np.max(g)*100000, dist[np.argmax(g)], prev_dist[np.argmax(g)], cost_c*100000)
+            # n+=1
 
-        # print(n, dist_obst, prev_dist_obst, g_obst)
+            # print(n, dist_obst, prev_dist_obst, g_obst)
         # prev_dist = dist
         # prev_dist_obst = dist_obst
 

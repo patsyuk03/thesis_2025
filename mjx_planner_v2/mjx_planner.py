@@ -292,19 +292,11 @@ class cem_planner():
 		dot_product = jnp.clip(dot_product, -1.0, 1.0)
 		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
-		# cost_r=0
 
-		# cost_c = jnp.sum(jnp.isin(self.geom_ids, collision))
-		# cost_c = jnp.max(collision)
-		y = 5
+		y = 0.8
 		collision = collision.T
-		# collision = jnp.where(collision<0, 0, collision)
-		# collision = jnp.where(collision>0, 0, collision)
-		# collision = jnp.clip(collision, 0.0, 1.0)
 		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
 		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
-		# collision = 1-collision
-		# cost_c = jnp.sum(jnp.where(collision<0, True, False))
 
 		cost = self.cost_weights['w_pos']*cost_g + self.cost_weights['w_rot']*cost_r + self.cost_weights['w_col']*cost_c
 		return cost, cost_g_, cost_c

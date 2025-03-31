@@ -22,7 +22,7 @@ cem =  cem_planner(
     maxiter_cem=2,
     w_pos=10,
     w_rot=2,
-    w_col=50,
+    w_col=10,
     num_elite=0.05,
     timestep=0.05
     )
@@ -55,7 +55,7 @@ with viewer.launch_passive(model, data) as viewer_:
         start_time = time.time()
         cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6])
         # thetadot = best_vels[1] 
-        thetadot = np.mean(best_vels[:6], axis=0)
+        thetadot = np.mean(best_vels[1:3], axis=0)
 
 
         
@@ -65,7 +65,7 @@ with viewer.launch_passive(model, data) as viewer_:
         cost_g = np.linalg.norm(data.xpos[cem.hande_id] - cem.target_pos)   
         cost_r = quaternion_distance(data.xquat[cem.hande_id], cem.target_rot)  
         cost = np.round(cost, 2)
-        print(f'Step Time: {"%.0f"%((time.time() - start_time)*1000)}ms | Cost g: {"%.2f"%(float(cost_g))} | Cost r: {"%.2f"%(float(cost_r))} | Cost c: {"%.2f"%(float(best_cost_c))} | Cost: {cost}')
+        print(f'Step Time: {"%.0f"%((time.time() - start_time)*1000)}ms | Cost g: {"%.2f"%(float(cost_g))} | Cost r: {"%.2f"%(float(cost_r))} | Cost c: {best_cost_c} | Cost: {cost}')
 
         viewer_.sync()
 

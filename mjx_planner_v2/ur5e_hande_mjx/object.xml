@@ -11,21 +11,21 @@
     <!-- <body name="object_1" pos="0 0.2 0.6">
         <geom name="body_1" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.2 0.2" type="box" />
     </body> -->
-    <!-- <body name="object_1" pos="0 0.1 0.7">
+    <body name="object_1" pos="0 0.1 0.7">
         <geom name="body_1" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.01 0.3" type="box" />
     </body>
     <body name="object_2" pos="0 -0.3 0.7">
         <geom name="body_2" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.01 0.3" type="box" />
-    </body> -->
+    </body>
 
-    <body name="object_1" pos="0 0 0.6">
+    <!-- <body name="object_1" pos="0 0 0.6">
         <geom name="body_1" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.2 0.2" type="box" />
     </body>
     <body name="object_2" pos="0 -0.25 0.8">
         <geom name="body_2" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.1 0.4" type="box" />
     </body>
     <body name="object_3" pos="0 0.25 0.8">
-        <geom name="body_3" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.1 0.4" type="box" contype="1" conaffinity="1" />
-    </body>
+        <geom name="body_3" pos="0 0 0" rgba="0.8 0 0 1" size="0.01 0.1 0.4" type="box" contype="1" conaffinity="1"  solimp="0.9 0.95 0.001" solref="0.02 1"/>
+    </body> -->
     
 </mujoco>
