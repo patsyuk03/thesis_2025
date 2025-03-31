@@ -15,7 +15,7 @@ def rotation_quaternion(angle_deg, axis):
     angle_rad = np.deg2rad(angle_deg)
     w = np.cos(angle_rad / 2)
     x, y, z = axis * np.sin(angle_rad / 2)
-    return (w, x, y, z)
+    return (round(w, 5), round(x, 5), round(y, 5), round(z, 5))
 
 def quaternion_multiply(q1, q2):
 		w1, x1, y1, z1 = q1
@@ -26,7 +26,7 @@ def quaternion_multiply(q1, q2):
 		y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
 		z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
 		
-		return (w, x, y, z)
+		return (round(w, 5), round(x, 5), round(y, 5), round(z, 5))
 
 
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
@@ -38,6 +38,10 @@ init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 
 data.qpos[:6] = init_joint_state
 # data.ctrl[:6] = init_joint_state
+mujoco.mj_step(model, data)
+init_position = data.xpos[model.body(name="hande").id]
+init_rotation = data.xquat[model.body(name="hande").id]
+print(init_rotation)
 
 # mjx_model = mjx.put_model(model)
 # mjx_data = mjx.put_data(model, data)
@@ -50,26 +54,18 @@ thetadot = np.genfromtxt(file_path, delimiter=',')
 # thetadot = np.tile(np.zeros(6), (300, 1))
 
 target_positions = [
-    [-0.3, 0.0, 1.0],
-    [-0.3, 0.3, 0.8],
-    [-0.2, -0.4, 1.0],
+    # [-0.3, 0.3, 0.8],
+    # [-0.2, -0.4, 1.0],
     [-0.3, -0.1, 0.8],
+    # init_position
 ]
-# target_rotations = [
-#     # [0., -0.9393727, 0.3428978, 0.0],
-#     # [-0.819, 0.573, 0.0, 0.0],
-#     # [-0.819,  -0.298,  0.490, 0.0],
-#     [-0.823, 0.270,  -0.465, 0.184],
-# ]
 
-rotation_quat_x = rotation_quaternion(90, np.array([0,0,1]))
-rotation_quat_z = rotation_quaternion(90, np.array([0,0,1]))
-result_quat = quaternion_multiply(rotation_quat_x, rotation_quat_z)
 target_rotations = [
-    rotation_quaternion(180, np.array([0,1,0])),
-    quaternion_multiply(rotation_quaternion(180, np.array([0,1,0])), rotation_quaternion(45, np.array([1,0,0]))),
-    quaternion_multiply(rotation_quaternion(180, np.array([0,1,0])), rotation_quaternion(-45, np.array([1,0,0]))),
-    rotation_quaternion(-90, np.array([0,1,0])),
+    quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(180, np.array([0,1,0]))),
+    # rotation_quaternion(-135, np.array([1,0,0])),
+    # quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
+    # quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
+    # init_rotation
 ]
 
 
@@ -79,6 +75,7 @@ n=0
 idx = 0
 model.body(name="target").pos = target_positions[idx]
 model.body(name="target").quat = target_rotations[idx]
+print(target_rotations[idx])
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
     viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True

@@ -85,12 +85,9 @@ class cem_planner():
 		self.l_3 = 1.0
 		self.ellite_num = int(self.num_elite*self.num_batch)
 
-		# init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
-
 		self.model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 		self.model = mujoco.MjModel.from_xml_path(self.model_path)
 		self.data = mujoco.MjData(self.model)
-		# self.data.qpos[:6] = init_joint_state
 		self.model.opt.timestep = self.t
 
 		self.mjx_model = mjx.put_model(self.model)
@@ -99,14 +96,10 @@ class cem_planner():
 		self.jit_step = jax.jit(mjx.step)
 
 		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
-		self.mask = jnp.sum(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
-		self.mask = jnp.where(self.mask==2, 0, self.mask)
-		self.mask = self.mask.astype(bool)
-
-		# self.target_pos = self.model.body(name="object_0").pos
-		# self.target_pos[-1] += 0.3
-
-		# self.target_rot = self.quaternion_multiply(self.mjx_data.xquat[self.model.body(name="object_0").id], [0, 1, 0, 0])
+		# self.mask = jnp.sum(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask = jnp.where(self.mask==2, 0, self.mask)
+		# self.mask = self.mask.astype(bool)
 
 		self.hande_id = self.model.body(name="hande").id
 
@@ -121,8 +114,6 @@ class cem_planner():
 			f'\n Default backend: {jax.default_backend()}'
 			f'\n Model path: {self.model_path}',
 			f'\n Timestep: {self.t}',
-			# f'\n Target position: {self.target_pos}',
-			# f'\n Target orientation: {self.target_rot}',
 			f'\n CEM Iter: {self.maxiter_cem}',
 			f'\n Number of batches: {self.num_batch}',
 			f'\n Number of steps per trajectory: {self.num}',
@@ -287,7 +278,7 @@ class cem_planner():
 		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
 
-		y = 0.8
+		y = 0.01
 		collision = collision.T
 		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
 		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
