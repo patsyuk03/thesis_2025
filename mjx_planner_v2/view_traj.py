@@ -1,0 +1,100 @@
+import mujoco
+from mujoco import viewer
+from mujoco import mjx
+import os
+import numpy as np
+import time
+import jax
+
+def quaternion_distance(q1, q2):
+    dot_product = np.abs(np.dot(q1, q2))
+    return 2 * np.arccos(dot_product)
+
+
+model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
+model = mujoco.MjModel.from_xml_path(model_path)
+model.opt.timestep = 0.05
+data = mujoco.MjData(model)
+
+init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
+# init_joint_state = [-1.07386628, -2.21057648, -2.35288999, -1.76991373, -1.09578535, -2.99189036]
+# init_joint_state = [1.3, -0.8, 0, 0, 0, 0]
+data.qpos[:6] = init_joint_state
+# data.ctrl[:6] = init_joint_state
+
+# mjx_model = mjx.put_model(model)
+# mjx_data = mjx.put_data(model, data)
+
+# jax_forward = jax.jit(mjx.forward)
+# mjx_data = jax_forward(mjx_model, mjx_data)
+
+file_path = f"{os.path.dirname(__file__)}/data/thetadot.csv" 
+thetadot = np.genfromtxt(file_path, delimiter=',')
+# thetadot = np.tile(np.zeros(6), (300, 1))
+# thetadot[:,2] = -0.9
+# print(thetadot[1])
+prev_dist = 0
+prev_dist_obst = 0
+
+geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
+n=0
+with viewer.launch_passive(model, data) as viewer_:
+    viewer_.cam.distance = 4
+    viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
+
+    start = time.time()
+    i = 0
+    while viewer_.is_running():
+        step_start = time.time()
+        data.qvel[:6] = thetadot[i]
+        # data.qpos[:6] = data.ctrl[:6]
+
+        # quat_gripper = data.xquat[model.body(name="hande").id]
+
+        # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
+        # mjx_data = mjx_data.replace(qpos=qpos)
+        # mjx_data = jax_forward(mjx_model, mjx_data)
+
+        # print(mjx_data.contact.dist)
+        y = 0
+        # mask = np.any(np.isin(mjx_data.contact.geom,geom_ids), axis=1)
+        # print(np.isin(mjx_data.contact.geom, geom_ids))
+        # print(np.sum(np.isin(mjx_data.contact.geom, geom_ids), axis=1))
+        # mask = np.sum(np.isin(mjx_data.contact.geom, geom_ids), axis=1)
+        # mask[mask==2] = 0
+        # mask = mask.astype(bool)
+        # eef_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'robot_6')
+        # obst_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, 'body_3')
+        # print(eef_id, obst_id)
+        # print(mask)
+        # print(mjx_data.contact.geom)
+        # print(mjx_data.contact.geom[mask])
+        # eef_obst = int((np.array(mjx_data.contact.geom.tolist()) == (eef_id,obst_id)).all(axis=1).nonzero()[0][0])
+        # dist = mjx_data.contact.dist[mask]
+        # dist_obst = mjx_data.contact.dist[eef_obst]
+        # dist = np.where(dist<0, 0, dist)
+        # g = -dist+prev_dist-y*(dist-prev_dist)
+        # g_obst = -dist_obst+prev_dist_obst-y*prev_dist_obst
+        # cost_c = np.sum(np.max(g.reshape(g.shape[0], 1), axis=-1, initial=0))
+        # if g_obst!=0:
+            # print(n, np.max(g)*100000, dist[np.argmax(g)], prev_dist[np.argmax(g)], cost_c*100000)
+            # n+=1
+
+            # print(n, dist_obst, prev_dist_obst, g_obst)
+        # prev_dist = dist
+        # prev_dist_obst = dist_obst
+
+        mujoco.mj_step(model, data)
+        viewer_.sync()
+
+        time_until_next_step = model.opt.timestep - (time.time() - step_start)
+        if time_until_next_step > 0:
+            time.sleep(time_until_next_step)    
+
+        if i < thetadot.shape[0]-1:
+            i+=1
+        else:
+            data.qvel[:6] = np.zeros(6)
+            data.qpos[:6] = init_joint_state
+            # mjx_data = mjx.put_data(model, data)
+            i=0

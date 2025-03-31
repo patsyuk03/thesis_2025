@@ -1,27 +1,36 @@
+import os
 
+xla_flags = os.environ.get('XLA_FLAGS', '')
+xla_flags += ' --xla_gpu_triton_gemm_any=True'
+os.environ['XLA_FLAGS'] = xla_flags
 
+import bernstein_coeff_order10_arbitinterval
+from functools import partial
 import numpy as np
 import jax.numpy as jnp
-import jax
-from jax import random, jit, vmap
-import bernstein_coeff_order10_arbitinterval
-import scipy
-from functools import partial
-import matplotlib.pyplot as plt 
-import os
-import mujoco.mjx as mjx 
 import mujoco
+import mujoco.mjx as mjx 
+import jax
+import time
+
 
 class cem_planner():
 
-	def __init__(self, num_dof, num_batch):
+	def __init__(self, num_dof=6, num_batch=100, num_steps=200, timestep=0.02, maxiter_cem=20, num_elite=0.1, w_pos=2, w_rot=0.03, w_col=0.1):
 		super(cem_planner, self).__init__()
 	 
 		self.num_dof = num_dof
-		self.t_fin = 5
-		self.num = 50
+		self.num_batch = num_batch
+		self.t = timestep
+		self.num = num_steps
+		self.num_elite = num_elite
+		self.cost_weights = {
+			'w_pos': w_pos,
+			'w_rot': w_rot,
+			'w_col': w_col,
+		}
 
-		self.t = self.t_fin/self.num
+		self.t_fin = self.num*self.t
 		
 		tot_time = np.linspace(0, self.t_fin, self.num)
 		self.tot_time = tot_time
@@ -38,20 +47,17 @@ class cem_planner():
 		self.rho_ineq = 1.0
 		self.rho_projection = 1.0
 		
-		
-		
-		self.num_batch = num_batch
-		# A_v_ineq, A_v = self.get_A_v()
-		# self.A_v_ineq = jnp.asarray(A_v_ineq) 
-		# self.A_v = jnp.asarray(A_v)
+		A_v_ineq, A_v = self.get_A_v()
+		self.A_v_ineq = jnp.asarray(A_v_ineq) 
+		self.A_v = jnp.asarray(A_v)
 
-		# A_a_ineq, A_a = self.get_A_a()
-		# self.A_a_ineq = jnp.asarray(A_a_ineq) 
-		# self.A_a = jnp.asarray(A_a)
+		A_a_ineq, A_a = self.get_A_a()
+		self.A_a_ineq = jnp.asarray(A_a_ineq) 
+		self.A_a = jnp.asarray(A_a)
   
-		# A_p_ineq, A_p = self.get_A_p()
-		# self.A_p_ineq = jnp.asarray(A_p_ineq) 
-		# self.A_p = jnp.asarray(A_p)
+		A_p_ineq, A_p = self.get_A_p()
+		self.A_p_ineq = jnp.asarray(A_p_ineq) 
+		self.A_p = jnp.asarray(A_p)
   
 		A_eq = self.get_A_eq()
 		self.A_eq = jnp.asarray(A_eq)
@@ -64,156 +70,312 @@ class cem_planner():
 		self.A_thetadot = jnp.asarray(A_thetadot)
 		self.A_thetaddot = jnp.asarray(A_thetaddot)
 		
-		self.compute_boundary_vec_batch = (vmap(self.compute_boundary_vec_single, in_axes = (0)  ))
-		key = random.PRNGKey(0)
+		self.compute_boundary_vec_batch = (jax.vmap(self.compute_boundary_vec_single, in_axes = (0)  ))
 
-		self.key = key
-		self.maxiter_projection = 1
-		self.maxiter_cem = 1
+		self.key= jax.random.PRNGKey(0)
+		self.maxiter_projection = 10
+		self.maxiter_cem = maxiter_cem
+
+		self.v_max = 0.8
+		self.a_max = 1.8
+		self.p_max = 180*np.pi/180
   
 		self.l_1 = 1.0
 		self.l_2 = 1.0
 		self.l_3 = 1.0
-		self.ellite_num = int(0.3*self.num_batch)
-		
+		self.ellite_num = int(self.num_elite*self.num_batch)
 
-		model_path = f"{os.path.dirname(__file__)}/../universal_robots_ur5e/scene_mjx.xml" 
-		self.model = mujoco.MjModel.from_xml_path(model_path)
-		data = mujoco.MjData(self.model)
-		# mjx_model = mjx.put_model(self.model)
-		# mjx_data = mjx.put_data(self.model, self.data)
-		  
-		# self.compute_observations_batch = vmap(self.compute_observations, in_axes = (0)    )
-  
-		# self.set_initial_final_batch = vmap(self.set_initial_final, in_axes=(0)  )
-	
+		init_joint_state = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+
+		self.model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
+		self.model = mujoco.MjModel.from_xml_path(self.model_path)
+		self.data = mujoco.MjData(self.model)
+		self.data.qpos[:6] = init_joint_state
+		self.model.opt.timestep = self.t
+
+		self.mjx_model = mjx.put_model(self.model)
+		self.mjx_data = mjx.put_data(self.model, self.data)
+		self.mjx_data = jax.jit(mjx.forward)(self.mjx_model, self.mjx_data)
+		self.jit_step = jax.jit(mjx.step)
+
+		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
+		# self.object_0_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'body_0')
+		# self.table_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'table_geom_1')
+		# self.fill_value = int((np.array(self.mjx_data.contact.geom.tolist()) == (self.table_id,self.object_0_id)).all(axis=1).nonzero()[0][0])
+		# self.mask_robot_object = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		self.mask = jnp.sum(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
+		# self.mask[self.mask==2] = 0
+		self.mask = jnp.where(self.mask==2, 0, self.mask)
+		self.mask = self.mask.astype(bool)
+
+		self.target_pos = self.model.body(name="object_0").pos
+		self.target_pos[-1] += 0.3
+
+		self.target_rot = self.quaternion_multiply(self.mjx_data.xquat[self.model.body(name="object_0").id], [0, 1, 0, 0])
+
+		self.hande_id = self.model.body(name="hande").id
+
+		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0, None, None))
+		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
+
+		self.print_info()
+
+
+	def print_info(self):
+		print(
+			f'\n Default backend: {jax.default_backend()}'
+			f'\n Model path: {self.model_path}',
+			f'\n Timestep: {self.t}',
+			f'\n Target position: {self.target_pos}',
+			f'\n Target orientation: {self.target_rot}',
+			f'\n CEM Iter: {self.maxiter_cem}',
+			f'\n Number of batches: {self.num_batch}',
+			f'\n Number of steps per trajectory: {self.num}',
+			f'\n Time per trajectory: {self.t_fin}',
+		)
+
+		
+	def quaternion_multiply(self, q1, q2):
+		"""Multiply two quaternions q1 * q2"""
+		w1, x1, y1, z1 = q1
+		w2, x2, y2, z2 = q2
+		
+		w = w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1
+		x = w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1
+		y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
+		z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
+		
+		return jnp.array([w, x, y, z])
+		
   
 	def get_A_traj(self):
-     
 		A_theta = np.kron(np.identity(self.num_dof), self.P )
 		A_thetadot = np.kron(np.identity(self.num_dof), self.Pdot )
 		A_thetaddot = np.kron(np.identity(self.num_dof), self.Pddot )
-
 		return A_theta, A_thetadot, A_thetaddot	
+	
+	def get_A_p(self):
+		A_p = np.vstack(( self.P, -self.P     ))
+		A_p_ineq = np.kron(np.identity(self.num_dof), A_p )
+		return A_p_ineq, A_p
+	
+	def get_A_v(self):
+		A_v = np.vstack(( self.Pdot, -self.Pdot     ))
+		A_v_ineq = np.kron(np.identity(self.num_dof), A_v )
+		return A_v_ineq, A_v
 
-	@partial(jit, static_argnums=(0,))
-	def compute_xi_samples(self, key, xi_mean, xi_cov ):
-     
-		key, subkey = random.split(key)
-  	
-		xi_samples = jax.random.multivariate_normal(key, xi_mean, xi_cov+0.003*jnp.identity(self.nvar), (self.num_batch, ))
-		return xi_samples, key
-
-
+	def get_A_a(self):
+		A_a = np.vstack(( self.Pddot, -self.Pddot  ))
+		A_a_ineq = np.kron(np.identity(self.num_dof), A_a )
+		return A_a_ineq, A_a
+	
 	def get_A_eq(self):
-
 		return np.kron(np.identity(self.num_dof), np.vstack((self.P[0], self.Pdot[0], self.Pddot[0], self.Pdot[-1], self.Pddot[-1]    )))
-
+	
 	def get_Q_inv(self, A_eq):
-	#  +self.rho_ineq*torch.mm(self.A_a.T, self.A_a)
- 
-		Q_inv = np.linalg.inv(np.vstack((np.hstack(( np.dot(self.A_projection.T, self.A_projection), A_eq.T)  ), 
+		Q_inv = np.linalg.inv(np.vstack((np.hstack(( np.dot(self.A_projection.T, self.A_projection)+self.rho_ineq*jnp.dot(self.A_v_ineq.T, self.A_v_ineq)+self.rho_ineq*jnp.dot(self.A_a_ineq.T, self.A_a_ineq)+self.rho_ineq*jnp.dot(self.A_p_ineq.T, self.A_p_ineq), A_eq.T)  ), 
 									 np.hstack((A_eq, np.zeros((np.shape(A_eq)[0], np.shape(A_eq)[0])))))))	
 		return Q_inv
 
-
-	@partial(jit, static_argnums=(0,))
-	def compute_boundary_vec_single(self, state_term):
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_xi_samples(self, key, xi_mean, xi_cov ):
+		key, subkey = jax.random.split(key)
+		xi_samples = jax.random.multivariate_normal(key, xi_mean, xi_cov+0.003*jnp.identity(self.nvar), (self.num_batch, ))
+		return xi_samples, key
 	
-		b_eq_term = state_term.reshape(5, self.num_dof).T
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_mean_cov(self, xi_ellite):
+		xi_mean = jnp.mean(xi_ellite, axis = 0)
+		xi_cov = jnp.cov(xi_ellite.T)
+		return xi_mean, xi_cov
 
+
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_boundary_vec_single(self, state_term):
+		b_eq_term = state_term.reshape(5, self.num_dof).T
 		b_eq_term = b_eq_term.reshape(self.num_dof*5)
-		
 		return b_eq_term
 
-	@partial(jit, static_argnums=(0,))
-	def compute_projection(self, b_eq_term,  xi_samples):
-    
-		lincost = -self.rho_projection*jnp.dot(self.A_projection.T, xi_samples.T).T
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_projection(self, lamda_v, lamda_a, lamda_p, s_v, s_a, s_p,b_eq_term,  xi_samples):
+  
+		v_max_temp = jnp.hstack(( self.v_max*jnp.ones((self.num_batch, self.num  )),  self.v_max*jnp.ones((self.num_batch, self.num  ))       ))
+		v_max_vec = jnp.tile(v_max_temp, (1, self.num_dof)  )
+
+		a_max_temp = jnp.hstack(( self.a_max*jnp.ones((self.num_batch, self.num  )),  self.a_max*jnp.ones((self.num_batch, self.num  ))       ))
+		a_max_vec = jnp.tile(a_max_temp, (1, self.num_dof)  )
+		
+		p_max_temp = jnp.hstack(( self.p_max*jnp.ones((self.num_batch, self.num  )),  self.p_max*jnp.ones((self.num_batch, self.num  ))       ))
+		p_max_vec = jnp.tile(p_max_temp, (1, self.num_dof)  )
+  
+		b_v = v_max_vec 
+		b_a = a_max_vec 
+		b_p = p_max_vec
+		
+		b_v_aug = b_v-s_v
+		b_a_aug = b_a-s_a 
+		b_p_aug = b_p-s_p
+  
+		lincost = -lamda_v-lamda_a-lamda_p-self.rho_projection*jnp.dot(self.A_projection.T, xi_samples.T).T-self.rho_ineq*jnp.dot(self.A_v_ineq.T, b_v_aug.T).T-self.rho_ineq*jnp.dot(self.A_a_ineq.T, b_a_aug.T).T-self.rho_ineq*jnp.dot(self.A_p_ineq.T, b_p_aug.T).T
 		sol = jnp.dot(self.Q_inv, jnp.hstack(( -lincost, b_eq_term )).T).T
-    
+  
 		primal_sol = sol[:, 0:self.nvar]
-		
-		return primal_sol
+		s_v = jnp.maximum( jnp.zeros(( self.num_batch, 2*self.num*self.num_dof )), -jnp.dot(self.A_v_ineq, primal_sol.T).T+b_v  )
+		res_v = jnp.dot(self.A_v_ineq, primal_sol.T).T-b_v+s_v 
 
-	@partial(jit, static_argnums=(0,))
+		s_a = jnp.maximum( jnp.zeros(( self.num_batch, 2*self.num*self.num_dof )), -jnp.dot(self.A_a_ineq, primal_sol.T).T+b_v  )
+		res_a = jnp.dot(self.A_a_ineq, primal_sol.T).T-b_a+s_a 
+
+		s_p = jnp.maximum( jnp.zeros(( self.num_batch, 2*self.num*self.num_dof )), -jnp.dot(self.A_p_ineq, primal_sol.T).T+b_p  )
+		res_p = jnp.dot(self.A_p_ineq, primal_sol.T).T-b_p+s_p 
+	
+		lamda_v = lamda_v-self.rho_ineq*jnp.dot(self.A_v_ineq.T, res_v.T).T
+		lamda_a = lamda_a-self.rho_ineq*jnp.dot(self.A_a_ineq.T, res_a.T).T
+		lamda_p = lamda_p-self.rho_ineq*jnp.dot(self.A_p_ineq.T, res_p.T).T
+  
+		res_v_vec = jnp.linalg.norm(res_v, axis = 1)
+		res_a_vec = jnp.linalg.norm(res_a, axis = 1)
+		res_p_vec = jnp.linalg.norm(res_p, axis = 1)
+		
+		res_projection = res_v_vec+res_a_vec+res_p_vec
+		
+		return primal_sol, s_v, s_a, s_p,  lamda_v, lamda_a, lamda_p, res_projection
+
+	@partial(jax.jit, static_argnums=(0,))
 	def compute_projection_filter(self, xi_samples, state_term):
-     
+
 		b_eq_term = self.compute_boundary_vec_batch(state_term)
+		s_v = jnp.zeros((self.num_batch, 2*self.num_dof*self.num   ))
+		s_a = jnp.zeros((self.num_batch, 2*self.num_dof*self.num   ))
+		s_p = jnp.zeros((self.num_batch, 2*self.num_dof*self.num   ))
+		lamda_v = jnp.zeros(( self.num_batch, self.nvar  ))
+		lamda_a = jnp.zeros(( self.num_batch, self.nvar  ))
+		lamda_p = jnp.zeros(( self.num_batch, self.nvar  ))
 		
-		primal_sol = self.compute_projection(b_eq_term,  xi_samples)
-     
+		for i in range(0, self.maxiter_projection):
+			primal_sol, s_v, s_a, s_p,  lamda_v, lamda_a, lamda_p, res_projection  = self.compute_projection(lamda_v, lamda_a, lamda_p, s_v, s_a, s_p,b_eq_term,  xi_samples)
+	 
 		return primal_sol
 
+	@partial(jax.jit, static_argnums=(0,))
+	def mjx_step(self, mjx_data, thetadot_single):
+		qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot_single)
+		mjx_data = mjx_data.replace(qvel=qvel)
+		mjx_data = self.jit_step(self.mjx_model, mjx_data)
+		theta = mjx_data.qpos[:self.num_dof]
+		eef_pos = mjx_data.xpos[self.hande_id]
+		eef_rot = mjx_data.xquat[self.hande_id]
+		# collision = mjx_data.contact.geom[jnp.where(mjx_data.contact.dist<0, size=100, fill_value=self.fill_value)].flatten()
+		
+		collision = mjx_data.contact.dist[self.mask]
 
-	# @partial(jit, static_argnums=(0,))
-	def compute_rollout_single(self, thetadot):
-		mjx_model = mjx.put_model(self.model)
-		mjx_data = mjx.make_data(self.model)
-     
-		theta = jnp.zeros((self.num_dof, self.num)) #theta=joint_states, num=steps
-		theta_init = mjx_data.qpos[:self.num_dof]
-		theta = theta.at[:, 0].set(theta_init)
-		print("test")
+		return mjx_data, (theta, eef_pos, eef_rot, collision)
 
-		for i in range(0, self.num-1):
-			qvel = mjx_data.qvel.at[:self.num_dof].set(thetadot[:, i])
-			mjx_data = mjx_data.replace(qvel=qvel)
-			mjx_data = mjx.step(mjx_model, mjx_data)
-			theta_vec = mjx_data.qpos[:self.num_dof]
-			theta = theta.at[:, i+1].set(theta_vec)
-			print(i)
-			
-		return theta
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_rollout_single(self, thetadot, init_pos, init_vel):
+		mjx_data = self.mjx_data
+		qvel = mjx_data.qvel.at[:self.num_dof].set(init_vel)
+		qpos = mjx_data.qpos.at[:self.num_dof].set(init_pos)
+		mjx_data = mjx_data.replace(qvel=qvel, qpos=qpos)
+		thetadot_single = thetadot.reshape(self.num_dof, self.num)
+		_, out = jax.lax.scan(self.mjx_step, mjx_data, thetadot_single.T, length=self.num)
+		theta, eef_pos, eef_rot, collision = out
+		return theta.T.flatten(), eef_pos, eef_rot, collision
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_cost_single(self, thetadot, eef_pos, eef_rot, collision):
+		cost_g_ = jnp.linalg.norm(eef_pos - self.target_pos, axis=1)
+		cost_g = cost_g_[-1] + jnp.sum(cost_g_[:-1])*1
+
+		dot_product = jnp.abs(jnp.dot(eef_rot/jnp.linalg.norm(eef_rot, axis=1).reshape(1, self.num).T, self.target_rot/jnp.linalg.norm(self.target_rot)))
+		dot_product = jnp.clip(dot_product, -1.0, 1.0)
+		cost_r_ = 2 * jnp.arccos(dot_product)
+		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
+
+		y = 0.8
+		collision = collision.T
+		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
+		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
+
+		cost = self.cost_weights['w_pos']*cost_g + self.cost_weights['w_rot']*cost_r + self.cost_weights['w_col']*cost_c
+		return cost, cost_g_, cost_c
+	
+	@partial(jax.jit, static_argnums=(0, ))
+	def compute_ellite_samples(self, cost_batch, xi_filtered):
+		idx_ellite = jnp.argsort(cost_batch)
+		xi_ellite = xi_filtered[idx_ellite[0:self.ellite_num]]
+		return xi_ellite, idx_ellite
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def cem_iter(self, carry, _):
+		init_pos, init_vel, xi_mean, xi_cov, key, state_term = carry
+
+		xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov)
+		xi_filtered = self.compute_projection_filter(xi_samples, state_term)
+
+		theta_batch = jnp.dot(self.A_theta, xi_filtered.T).T 
+		thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
+
+		theta, eef_pos, eef_rot, collision = self.compute_rollout_batch(thetadot, init_pos, init_vel)
+		cost_batch, cost_g_batch, cost_c_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, collision)
+
+		xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
+		xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
+
+		carry = (init_pos, init_vel, xi_mean, xi_cov, key, state_term)
+		return carry, (cost_batch, cost_g_batch, cost_c_batch, thetadot, theta)
+	
     
 
-	# @partial(jit, static_argnums=(0,))
-	def compute_cem(self, theta_init, state_term):
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_cem(self, xi_mean, init_pos=jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0]), init_vel=jnp.zeros(6), init_acc=jnp.zeros(6)):
+		theta_init = jnp.tile(init_pos, (self.num_batch, 1))
+		thetadot_init = jnp.tile(init_vel, (self.num_batch, 1))
+		thetaddot_init = jnp.tile(init_acc, (self.num_batch, 1))
+		# thetaddot_init = jnp.zeros((self.num_batch, self.num_dof  ))
+		thetadot_fin = jnp.zeros((self.num_batch, self.num_dof  ))
+		thetaddot_fin = jnp.zeros((self.num_batch, self.num_dof  ))
+
+		state_term = jnp.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
+		state_term = jnp.asarray(state_term)
 		
-		res = []
-		xi_mean = jnp.zeros(self.nvar)
-		xi_cov = 5*jnp.identity(self.nvar)
+		xi_cov = 10*jnp.identity(self.nvar)
   
-		key, subkey = random.split(self.key)
-  
-	
-		for i in range(0, self.maxiter_cem):
-			
-			xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov )
-			## xi_samples are matrix of batch times (self.num_dof*self.nvar_single = self.nvar)
-			xi_filtered = self.compute_projection_filter(xi_samples, state_term )
+		key, subkey = jax.random.split(self.key)
 
-			thetadot = jnp.dot(self.A_thetadot, xi_filtered.T).T
-			# theta = self.compute_rollout_batch(thetadot) ### mjx
-			thetadot_single = thetadot[0].reshape(self.num_dof, self.num)
-			theta = self.compute_rollout_single(thetadot_single)
-			
-			### theta should be a matrix of batch times(self.num_dof*self.num)
+		carry = (init_pos, init_vel, xi_mean, xi_cov, key, state_term)
+		scan_over = jnp.array([0]*self.maxiter_cem)
+		carry, out = jax.lax.scan(self.cem_iter, carry, scan_over, length=self.maxiter_cem)
+		cost_batch, cost_g_batch, cost_c_batch, thetadot, theta = out
 
-   
-			### thetadot is matrix of batch times(self.num_dof*self.num)
-   
-			# thetadot_single = thetadot[0].reshape(self.num_dof, self.num)
-			plt.plot(theta.T)
-			plt.show()
+		idx_min = jnp.argmin(cost_batch[-1])
+		cost = jnp.min(cost_batch, axis=1)
+		best_vels = thetadot[-1][idx_min].reshape((self.num_dof, self.num)).T
+		best_traj = theta[-1][idx_min].reshape((self.num_dof, self.num)).T
+		best_cost_g = cost_g_batch[-1][idx_min]
+		best_cost_c = cost_c_batch[-1][idx_min]
 
-			# cost_batch = self.compute_cost
-  
-  	
-		return 0
+		return cost, best_cost_g, best_cost_c, best_vels, best_traj, carry[2]
 	
 def main():
-	num_dof = 7
-	num_batch = 1000
-	opt_class =  cem_planner(num_dof, num_batch)
-	theta_init = np.zeros((num_batch, num_dof))
-	thetadot_init = np.zeros((num_batch, num_dof  ))
-	thetaddot_init = np.zeros((num_batch, num_dof  ))
-	thetadot_fin = np.zeros((num_batch, num_dof  ))
-	thetaddot_fin = np.zeros((num_batch, num_dof  ))
-	state_term = np.hstack(( theta_init, thetadot_init, thetaddot_init, thetadot_fin, thetaddot_fin   ))
-	state_term = jnp.asarray(state_term)
-	temp = opt_class.compute_cem(theta_init, state_term)
+	num_dof = 6
+	num_batch = 500
+
+	start_time = time.time()
+	opt_class = cem_planner(num_dof, num_batch, w_pos=3, num_elite=0.1, maxiter_cem=30)	
+
+	start_time_comp_cem = time.time()
+	cost, best_cost_g, best_vels, best_traj, xi_mean = opt_class.compute_cem()
+
+	print(f"Total time: {round(time.time()-start_time, 2)}s")
+	print(f"Compute CEM time: {round(time.time()-start_time_comp_cem, 2)}s")
+
+	np.savetxt('data/output_costs.csv',cost, delimiter=",")
+	np.savetxt('data/best_vels.csv',best_vels, delimiter=",")
+	np.savetxt('data/best_traj.csv',best_traj, delimiter=",")
+	np.savetxt('data/best_cost_g.csv',best_cost_g, delimiter=",")
+
 	
 	
 if __name__ == "__main__":
