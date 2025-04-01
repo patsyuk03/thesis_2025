@@ -8,29 +8,7 @@ import jax
 import os
 from mujoco import viewer
 import matplotlib.pyplot as plt
-
-def quaternion_distance(q1, q2):
-    dot_product = np.abs(np.dot(q1, q2))
-    dot_product = jnp.clip(dot_product, -1.0, 1.0)
-    return 2 * np.arccos(dot_product)
-
-def rotation_quaternion(angle_deg, axis):
-    axis = axis / np.linalg.norm(axis)
-    angle_rad = np.deg2rad(angle_deg)
-    w = np.cos(angle_rad / 2)
-    x, y, z = axis * np.sin(angle_rad / 2)
-    return (round(w, 5), round(x, 5), round(y, 5), round(z, 5))
-
-def quaternion_multiply(q1, q2):
-		w1, x1, y1, z1 = q1
-		w2, x2, y2, z2 = q2
-		
-		w = w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1
-		x = w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1
-		y = w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1
-		z = w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1
-		
-		return (round(w, 5), round(x, 5), round(y, 5), round(z, 5))
+from quat_math import rotation_quaternion, quaternion_multiply, quaternion_distance
 
 start_time = time.time()
 cem =  cem_planner(
@@ -38,9 +16,9 @@ cem =  cem_planner(
     num_batch=4000, 
     num_steps=10, 
     maxiter_cem=2,
-    w_pos=5,
+    w_pos=8,
     w_rot=1.5,
-    w_col=15,
+    w_col=20,
     num_elite=0.05,
     timestep=0.05
     )
@@ -52,8 +30,8 @@ data.qpos[:6] = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 mujoco.mj_forward(model, data)
 
 xi_mean = jnp.zeros(cem.nvar)
-target_pos = model.body(name="target").pos
-target_rot = model.body(name="target").quat
+target_pos = model.body(name="target_0").pos
+target_rot = model.body(name="target_0").quat
 
 
 start_time = time.time()
@@ -70,24 +48,27 @@ cost_c_list = list()
 thetadot_list = list()
 theta_list = list()
 
-init_position = data.xpos[model.body(name="hande").id].copy()
+# init_position = data.xpos[model.body(name="hande").id].copy()
+init_position = data.site_xpos[model.site(name="tcp").id].copy()
 init_rotation = data.xquat[model.body(name="hande").id].copy()
 
-target_positions = [
-    [-0.3, 0.3, 0.8],
-    [-0.2, -0.4, 1.0],
-    [-0.3, -0.1, 0.8],
-    init_position
-]
+# target_positions = [
+#     [-0.3, 0.3, 0.8],
+#     [-0.2, -0.4, 1.0],
+#     [-0.3, -0.1, 0.8],
+#     init_position
+# ]
 
-target_rotations = [
-    rotation_quaternion(-135, np.array([1,0,0])),
-    quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
-    quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
-    init_rotation
-]
+# target_rotations = [
+#     rotation_quaternion(-135, np.array([1,0,0])),
+#     quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
+#     quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
+#     init_rotation
+# ]
 
 target_idx = 0
+
+target = "target_0"
 
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
@@ -97,8 +78,16 @@ with viewer.launch_passive(model, data) as viewer_:
 
     while viewer_.is_running():
         start_time = time.time()
-        target_pos = model.body(name="target").pos
-        target_rot = model.body(name="target").quat
+        if target != "home":
+            target_pos = model.body(name=target).pos
+            target_rot = model.body(name=target).quat
+        else:
+            target_pos = init_position
+            target_rot = init_rotation
+
+        if target == "target_1":
+            model.body(name="target_0").pos = data.site_xpos[cem.tcp_id]
+            model.body(name="target_0").quat = data.xquat[cem.hande_id]
 
         cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot)
         thetadot = np.mean(best_vels[1:5], axis=0)
@@ -107,17 +96,25 @@ with viewer.launch_passive(model, data) as viewer_:
         data.qvel[:6] = thetadot
         mujoco.mj_step(model, data)
 
-        cost_g = np.linalg.norm(data.xpos[cem.hande_id] - target_pos)   
+        cost_g = np.linalg.norm(data.site_xpos[cem.tcp_id] - target_pos)   
         cost_r = quaternion_distance(data.xquat[cem.hande_id], target_rot)  
         cost = np.round(cost, 2)
         print(f'Step Time: {"%.0f"%((time.time() - start_time)*1000)}ms | Cost g: {"%.2f"%(float(cost_g))} | Cost r: {"%.2f"%(float(cost_r))} | Cost c: {"%.2f"%(float(best_cost_c))} | Cost: {cost}')
         viewer_.sync()
 
-        if cost_g<0.03 and cost_r<0.3:
-            model.body(name="target").pos = target_positions[target_idx]
-            model.body(name="target").quat = target_rotations[target_idx]
-            if target_idx<len(target_positions)-1:
-                target_idx += 1
+        if cost_g<0.01 and cost_r<0.3:
+            if target == "target_0":
+                target = "target_1"
+            elif target == "target_1":
+                model.body(name="target_0").pos = data.site_xpos[cem.tcp_id].copy()
+                model.body(name="target_0").quat = data.xquat[cem.hande_id].copy()
+                target = "home"
+
+            # model.body(name="target").pos = target_positions[target_idx]
+            # model.body(name="target").quat = target_rotations[target_idx]
+            # if target_idx<len(target_positions)-1:
+            #     target_idx += 1
+
 
         cost_g_list.append(cost_g)
         cost_r_list.append(cost_r)

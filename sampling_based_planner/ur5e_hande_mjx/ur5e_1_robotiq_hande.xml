@@ -1,7 +1,7 @@
 <mujoco model="ur5e_1">
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
 
-  <option iterations="1" ls_iterations="5">
+  <option iterations="1" ls_iterations="5"> 
     <!-- <flag eulerdamp="disable" sensor="disable"/> -->
     <flag eulerdamp="disable" actuation="disable" sensor="disable"/>
   </option>
@@ -145,7 +145,7 @@
                       <geom mesh="coupler" name="hande_coupler" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
                       <geom mesh="hande" name="hande_base" type="mesh" class="visual_1" rgba="0.1 0.1 0.1 1" />
                       <site name="tcp" pos="0 0 0.135"/>
-                      <geom name="robot_0" class="collision_1" pos="0 0 0.04" quat="1 0 0 1" size="0.03 0.015"/>
+                      <geom name="robot_0" class="collision_1" pos="0 0 0.04" quat="1 0 0 1" size="0.04 0.07"/>
 
                       <body name="hande_left_finger" pos="0 0 0.099" gravcomp="1">
                         <inertial pos="0.02262 -0.00759 0.00738" quat="0.871952 0.0369732 -0.211073 0.440205" mass="0.03804" diaginertia="1.22763e-05 1.22763e-05 1.22763e-05"/>

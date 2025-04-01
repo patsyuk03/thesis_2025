@@ -95,6 +95,10 @@ class cem_planner():
 		self.mjx_data = jax.jit(mjx.forward)(self.mjx_model, self.mjx_data)
 		self.jit_step = jax.jit(mjx.step)
 
+		# self.obst_ids = np.array([self.model.body(name= f'obstacle_{i}').id for i in range(2)])
+		self.obst_0_pos = self.mjx_data.xpos[self.model.body(name= 'obstacle_0').id]
+		self.obst_1_pos = self.mjx_data.xpos[self.model.body(name= 'obstacle_1').id]
+
 		self.geom_ids = np.array([mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
 		# self.mask = jnp.sum(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
 		self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, self.geom_ids), axis=1)
@@ -102,6 +106,7 @@ class cem_planner():
 		# self.mask = self.mask.astype(bool)
 
 		self.hande_id = self.model.body(name="hande").id
+		self.tcp_id = self.model.site(name="tcp").id
 
 		self.compute_rollout_batch = jax.vmap(self.compute_rollout_single, in_axes = (0, None, None))
 		self.compute_cost_batch = jax.vmap(self.compute_cost_single, in_axes = (0))
@@ -251,8 +256,9 @@ class cem_planner():
 		mjx_data = self.jit_step(self.mjx_model, mjx_data)
 
 		theta = mjx_data.qpos[:self.num_dof]
-		eef_pos = mjx_data.xpos[self.hande_id]
-		eef_rot = mjx_data.xquat[self.hande_id]		
+		# eef_pos = mjx_data.xpos[self.hande_id]
+		eef_rot = mjx_data.xquat[self.hande_id]	
+		eef_pos = mjx_data.site_xpos[self.tcp_id]
 		collision = mjx_data.contact.dist[self.mask]
 
 		return mjx_data, (theta, eef_pos, eef_rot, collision)
@@ -278,7 +284,9 @@ class cem_planner():
 		cost_r_ = 2 * jnp.arccos(dot_product)
 		cost_r = cost_r_[-1] + jnp.sum(cost_r_[:-1])*1
 
-		y = 0.01
+		# cost_o =  1/jnp.linalg.norm(eef_pos - self.obst_0_pos)+1/jnp.linalg.norm(eef_pos - self.obst_1_pos)
+
+		y = 0.008
 		collision = collision.T
 		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
 		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
