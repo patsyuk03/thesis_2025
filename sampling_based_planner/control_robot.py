@@ -29,7 +29,7 @@ def quaternion_multiply(q1, q2):
 		return (round(w, 5), round(x, 5), round(y, 5), round(z, 5))
 
 
-model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
+model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene_control.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 model.opt.timestep = 0.05
 data = mujoco.MjData(model)
@@ -37,6 +37,8 @@ data = mujoco.MjData(model)
 init_joint_state = [1.5, -1.8, 1.75, -1.25, -1.6, 0]
 
 data.qpos[:6] = init_joint_state
+data.ctrl[:6] = init_joint_state
+
 mujoco.mj_step(model, data)
 init_position = data.xpos[model.body(name="hande").id]
 init_rotation = data.xquat[model.body(name="hande").id]
@@ -48,13 +50,6 @@ print(init_rotation)
 # jax_forward = jax.jit(mjx.forward)
 # mjx_data = jax_forward(mjx_model, mjx_data)
 
-file_path = f"{os.path.dirname(__file__)}/data/thetadot.csv" 
-thetadot = np.genfromtxt(file_path, delimiter=',')
-# thetadot = np.tile(np.zeros(6), (300, 1))
-
-
-geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)]) # [33  7 12 13 18 19 23 27 28 30]
-
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
     viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
@@ -64,9 +59,8 @@ with viewer.launch_passive(model, data) as viewer_:
     start = time.time()
     i = 0
     while viewer_.is_running():
-        n+=1
         step_start = time.time()
-        # data.qvel[:6] = thetadot[i]
+        data.qpos[:6] = data.ctrl[:6]
 
         # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
         # mjx_data = mjx_data.replace(qpos=qpos)
@@ -77,11 +71,4 @@ with viewer.launch_passive(model, data) as viewer_:
 
         time_until_next_step = model.opt.timestep - (time.time() - step_start)
         if time_until_next_step > 0:
-            time.sleep(time_until_next_step)    
-
-        if i < thetadot.shape[0]-1:
-            i+=1
-        else:
-            data.qvel[:6] = np.zeros(6)
-            data.qpos[:6] = init_joint_state
-            i=0
+            time.sleep(time_until_next_step)   
