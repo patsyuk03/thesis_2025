@@ -286,7 +286,7 @@ class cem_planner():
 
 		# cost_o =  1/jnp.linalg.norm(eef_pos - self.obst_0_pos)+1/jnp.linalg.norm(eef_pos - self.obst_1_pos)
 
-		y = 0.008
+		y = 0.005
 		collision = collision.T
 		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
 		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))

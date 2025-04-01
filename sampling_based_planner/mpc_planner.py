@@ -13,12 +13,12 @@ from quat_math import rotation_quaternion, quaternion_multiply, quaternion_dista
 start_time = time.time()
 cem =  cem_planner(
     num_dof=6, 
-    num_batch=4000, 
+    num_batch=5000, 
     num_steps=10, 
     maxiter_cem=2,
-    w_pos=8,
+    w_pos=5,
     w_rot=1.5,
-    w_col=20,
+    w_col=10,
     num_elite=0.05,
     timestep=0.05
     )
@@ -73,8 +73,8 @@ target = "target_0"
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
     viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
-    viewer_.opt.sitegroup[:] = False  
-    viewer_.opt.sitegroup[1] = True 
+    # viewer_.opt.sitegroup[:] = False  
+    # viewer_.opt.sitegroup[1] = True 
 
     while viewer_.is_running():
         start_time = time.time()
@@ -90,7 +90,7 @@ with viewer.launch_passive(model, data) as viewer_:
             model.body(name="target_0").quat = data.xquat[cem.hande_id]
 
         cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot)
-        thetadot = np.mean(best_vels[1:5], axis=0)
+        thetadot = np.mean(best_vels[1:8], axis=0)
         # thetadot = best_vels[1]
 
         data.qvel[:6] = thetadot
