@@ -64,9 +64,9 @@ with viewer.launch_passive(model, data) as viewer_:
     start = time.time()
     i = 0
     while viewer_.is_running():
-        n+=1
+        # n+=1
         step_start = time.time()
-        # data.qvel[:6] = thetadot[i]
+        data.qvel[:6] = thetadot[i]
 
         # qpos = mjx_data.qpos.at[:6].set(data.ctrl[:6])
         # mjx_data = mjx_data.replace(qpos=qpos)

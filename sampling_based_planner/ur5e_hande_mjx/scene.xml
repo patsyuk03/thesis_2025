@@ -1,6 +1,10 @@
 <mujoco model="ur5e scene">
   <include file="ur5e_1_robotiq_hande.xml"/>
 
+  <option iterations="1" ls_iterations="5">
+    <flag eulerdamp="disable"/>
+  </option>
+
   <statistic center="0.3 0 0.4" extent="0.8"/>
 
   <visual>
@@ -18,28 +22,31 @@
 
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" />
     <include file="objects.xml" />
     <camera name="camera1" pos="0 0 4" xyaxes="1 0 0 0 1 0"/>
   </worldbody>
 
   <contact>
-    <exclude body1="hande" body2="target_0"/>
+    <!-- <exclude body1="hande" body2="target_0"/>
     <exclude body1="wrist_3_link_1" body2="target_0"/>
     <exclude body1="wrist_2_link_1" body2="target_0"/>
     <exclude body1="wrist_1_link_1" body2="target_0"/>
     <exclude body1="forearm_link_1" body2="target_0"/>
     <exclude body1="upper_arm_link_1" body2="target_0"/>
     <exclude body1="shoulder_link_1" body2="target_0"/>
-    <exclude body1="base_1" body2="target_0"/>
+    <exclude body1="base_1" body2="target_0"/> -->
 
-    <!-- <exclude body1="hande" body2="target_1"/>
+    <exclude body1="hande" body2="target_1"/>
     <exclude body1="wrist_3_link_1" body2="target_1"/>
     <exclude body1="wrist_2_link_1" body2="target_1"/>
     <exclude body1="wrist_1_link_1" body2="target_1"/>
     <exclude body1="forearm_link_1" body2="target_1"/>
     <exclude body1="upper_arm_link_1" body2="target_1"/>
     <exclude body1="shoulder_link_1" body2="target_1"/>
-    <exclude body1="base_1" body2="target_1"/> -->
+    <exclude body1="base_1" body2="target_1"/>
+
+    <exclude body1="target_0" body2="target_1"/>
+
   </contact>
 </mujoco>

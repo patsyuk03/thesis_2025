@@ -1,10 +1,9 @@
 <mujoco model="ur5e_1">
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
 
-  <option iterations="1" ls_iterations="5"> 
-    <!-- <flag eulerdamp="disable" sensor="disable"/> -->
+  <!-- <option iterations="1" ls_iterations="5"> 
     <flag eulerdamp="disable" actuation="disable" sensor="disable"/>
-  </option>
+  </option> -->
 
   <default>
     <default class="ur5e_1">

@@ -13,13 +13,13 @@ from quat_math import rotation_quaternion, quaternion_multiply, quaternion_dista
 start_time = time.time()
 cem =  cem_planner(
     num_dof=6, 
-    num_batch=10000, 
-    num_steps=8, 
+    num_batch=5000, 
+    num_steps=10, 
     maxiter_cem=2,
-    w_pos=5,
-    w_rot=1.5,
-    w_col=50,
-    num_elite=0.05,
+    w_pos=10,
+    w_rot=2.5,
+    w_col=0.1,
+    num_elite=0.1,
     timestep=0.05
     )
 print(f"Initialized CEM Planner: {round(time.time()-start_time, 2)}s")
@@ -30,12 +30,15 @@ data.qpos[:6] = jnp.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 mujoco.mj_forward(model, data)
 
 xi_mean = jnp.zeros(cem.nvar)
-target_pos = model.body(name="target_0").pos
-target_rot = model.body(name="target_0").quat
+target_pos = model.body(name="target_1").pos
+target_rot = model.body(name="target_1").quat
+
+init_position = data.xpos[model.body(name="target_0").id].copy()
+init_rotation = data.xquat[model.body(name="target_0").id].copy()
 
 
 start_time = time.time()
-_ = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot)
+_ = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot, init_position, init_rotation)
 print(f"Compute CEM: {round(time.time()-start_time, 2)}s")
 
 
@@ -49,61 +52,81 @@ thetadot_list = list()
 theta_list = list()
 
 # init_position = data.xpos[model.body(name="hande").id].copy()
-init_position = data.site_xpos[model.site(name="tcp").id].copy()
-init_rotation = data.xquat[model.body(name="hande").id].copy()
+# init_position = data.site_xpos[model.site(name="tcp").id].copy()
+# init_rotation = data.xquat[model.body(name="hande").id].copy()
+
+# target_positions = [
+#     [-0.3, 0.3, 0.8],
+#     [-0.2, -0.4, 1.0],
+#     [-0.3, -0.1, 0.8],
+#     init_position
+# ]
+
+# target_rotations = [
+#     rotation_quaternion(-135, np.array([1,0,0])),
+#     quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
+#     quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
+#     init_rotation
+# ]
 
 target_positions = [
-    [-0.3, 0.3, 0.8],
-    [-0.2, -0.4, 1.0],
-    [-0.3, -0.1, 0.8],
-    init_position
+    [-0.2, -0.3, 0.4],
+    [-0.2, 0.3, 0.4],
+    [-0.2, 0.0, 0.4],
 ]
 
 target_rotations = [
-    rotation_quaternion(-135, np.array([1,0,0])),
-    quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
-    quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
-    init_rotation
+    quaternion_multiply(init_rotation,rotation_quaternion(-30, np.array([0,0,1]))),
+    quaternion_multiply(init_rotation,rotation_quaternion(45, np.array([0,0,1]))),
+    quaternion_multiply(init_rotation,rotation_quaternion(-20, np.array([0,0,1]))),
 ]
 
 target_idx = 0
 
-target = "target_0"
+# target = "target_1"
 
 with viewer.launch_passive(model, data) as viewer_:
     viewer_.cam.distance = 4
-    viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
-    viewer_.opt.sitegroup[:] = False  
-    viewer_.opt.sitegroup[1] = True 
+    # viewer_.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
+    # viewer_.opt.sitegroup[:] = False  
+    # viewer_.opt.sitegroup[1] = True 
 
     while viewer_.is_running():
         start_time = time.time()
-        if target != "home":
-            target_pos = model.body(name=target).pos
-            target_rot = model.body(name=target).quat
-        else:
-            target_pos = init_position
-            target_rot = init_rotation
+        # if target != "home":
+        #     target_pos = model.body(name=target).pos
+        #     target_rot = model.body(name=target).quat
+        # else:
+        #     target_pos = init_position
+        #     target_rot = init_rotation            
 
-        if target == "target_1":
-            model.body(name="target_0").pos = data.site_xpos[cem.tcp_id]
-            model.body(name="target_0").quat = data.xquat[cem.hande_id]
+        # if target == "target_1":
+        #     model.body(name="target_0").pos = data.site_xpos[cem.tcp_id]
+        #     model.body(name="target_0").quat = data.xquat[cem.hande_id]
 
-        cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot)
-        thetadot = np.mean(best_vels[1:5], axis=0)
+        target_pos = model.body(name="target_1").pos
+        target_rot = model.body(name="target_1").quat
+
+
+        cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot, init_position, init_rotation)
+        thetadot = np.mean(best_vels[1:2], axis=0)
         # thetadot = np.mean(best_vels, axis=0)
         # thetadot = best_vels[1]
 
         data.qvel[:6] = thetadot
         mujoco.mj_step(model, data)
 
-        cost_g = np.linalg.norm(data.site_xpos[cem.tcp_id] - target_pos)   
-        cost_r = quaternion_distance(data.xquat[cem.hande_id], target_rot)  
+        init_position = data.xpos[model.body(name="target_0").id].copy()
+        init_rotation = data.xquat[model.body(name="target_0").id].copy()
+
+        cost_g = np.linalg.norm(init_position[:-1] - target_pos[:-1])   
+        cost_r = quaternion_distance(init_rotation, target_rot)  
         cost = np.round(cost, 2)
         print(f'Step Time: {"%.0f"%((time.time() - start_time)*1000)}ms | Cost g: {"%.2f"%(float(cost_g))} | Cost r: {"%.2f"%(float(cost_r))} | Cost c: {"%.2f"%(float(best_cost_c))} | Cost: {cost}')
         viewer_.sync()
 
-        if cost_g<0.01 and cost_r<0.3:
+        if cost_g<0.02 and cost_r<0.02:
+        #     target = "home"
             # if target == "target_0":
             #     target = "target_1"
             # elif target == "target_1":
@@ -111,8 +134,13 @@ with viewer.launch_passive(model, data) as viewer_:
             #     model.body(name="target_0").quat = data.xquat[cem.hande_id].copy()
             #     target = "home"
 
-            model.body(name="target_0").pos = target_positions[target_idx]
-            model.body(name="target_0").quat = target_rotations[target_idx]
+            # model.body(name="target_0").pos = target_positions[target_idx]
+            # model.body(name="target_0").quat = target_rotations[target_idx]
+            # if target_idx<len(target_positions)-1:
+            #     target_idx += 1
+
+            model.body(name="target_1").pos = target_positions[target_idx]
+            model.body(name="target_1").quat = target_rotations[target_idx]
             if target_idx<len(target_positions)-1:
                 target_idx += 1
 

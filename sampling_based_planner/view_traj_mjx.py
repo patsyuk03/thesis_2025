@@ -6,6 +6,8 @@ import numpy as np
 import time
 import jax
 import cv2
+import jax.numpy as jnp
+
 
 def quaternion_to_euler(quaternion):
     w, x, y, z = quaternion
@@ -47,7 +49,7 @@ data.qpos[:6] = init_joint_state
 mjx_model = mjx.put_model(model)
 mjx_data = mjx.put_data(model, data)
 
-file_path = f"{os.path.dirname(__file__)}/data/best_vels.csv" 
+file_path = f"{os.path.dirname(__file__)}/data/thetadot.csv" 
 thetadot = np.genfromtxt(file_path, delimiter=',')
 
 geom_ids = np.array([mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}') for i in range(10)])
@@ -57,23 +59,28 @@ scene_option = mujoco.MjvOption()
 # scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
 scene_option.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
 
+target_id = model.body(name="target_0").id
+target_qpos_idx = mjx_model.body_dofadr[target_id]
+print(target_id, target_qpos_idx)
+
+qpos = mjx_data.qpos.at[target_qpos_idx : target_qpos_idx + 3].set(jnp.array([-0.3, -0.3, 0.7]))
+mjx_data = mjx_data.replace(qpos=qpos)
+
 start = time.time()
 i = 0
 while True:
     step_start = time.time()
+
     qvel = mjx_data.qvel.at[:6].set(thetadot[i])
     mjx_data = mjx_data.replace(qvel=qvel)
+
     mjx_data = jit_step(mjx_model, mjx_data)
+    print(mjx_data.xpos[target_id])
     data_temp = mjx.get_data(model, mjx_data)
 
     time_until_next_step = model.opt.timestep - (time.time() - step_start)
     if time_until_next_step > 0:
         time.sleep(time_until_next_step)
-
-    # collision_geom = mjx_data.contact.geom
-    # collision_dist = mjx_data.contact.dist
-    # collision = collision_geom[collision_dist<0]
-    # print(collision)
 
     renderer.update_scene(data_temp, scene_option=scene_option, camera=camera)
     pixels = renderer.render()
