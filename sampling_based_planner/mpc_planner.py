@@ -13,13 +13,13 @@ from quat_math import rotation_quaternion, quaternion_multiply, quaternion_dista
 start_time = time.time()
 cem =  cem_planner(
     num_dof=6, 
-    num_batch=5000, 
-    num_steps=10, 
+    num_batch=2000, 
+    num_steps=20, 
     maxiter_cem=2,
     w_pos=10,
     w_rot=2.5,
     w_col=0.1,
-    num_elite=0.1,
+    num_elite=0.01,
     timestep=0.05
     )
 print(f"Initialized CEM Planner: {round(time.time()-start_time, 2)}s")
@@ -55,20 +55,6 @@ theta_list = list()
 # init_position = data.site_xpos[model.site(name="tcp").id].copy()
 # init_rotation = data.xquat[model.body(name="hande").id].copy()
 
-# target_positions = [
-#     [-0.3, 0.3, 0.8],
-#     [-0.2, -0.4, 1.0],
-#     [-0.3, -0.1, 0.8],
-#     init_position
-# ]
-
-# target_rotations = [
-#     rotation_quaternion(-135, np.array([1,0,0])),
-#     quaternion_multiply(rotation_quaternion(90, np.array([0,0,1])),rotation_quaternion(135, np.array([1,0,0]))),
-#     quaternion_multiply(rotation_quaternion(180, np.array([0,0,1])),rotation_quaternion(-90, np.array([0,1,0]))),
-#     init_rotation
-# ]
-
 target_positions = [
     [-0.2, -0.3, 0.4],
     [-0.2, 0.3, 0.4],
@@ -93,25 +79,15 @@ with viewer.launch_passive(model, data) as viewer_:
 
     while viewer_.is_running():
         start_time = time.time()
-        # if target != "home":
-        #     target_pos = model.body(name=target).pos
-        #     target_rot = model.body(name=target).quat
-        # else:
-        #     target_pos = init_position
-        #     target_rot = init_rotation            
-
-        # if target == "target_1":
-        #     model.body(name="target_0").pos = data.site_xpos[cem.tcp_id]
-        #     model.body(name="target_0").quat = data.xquat[cem.hande_id]
 
         target_pos = model.body(name="target_1").pos
         target_rot = model.body(name="target_1").quat
 
 
         cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot, init_position, init_rotation)
-        thetadot = np.mean(best_vels[1:2], axis=0)
+        # thetadot = np.mean(best_vels[1:5], axis=0)
         # thetadot = np.mean(best_vels, axis=0)
-        # thetadot = best_vels[1]
+        thetadot = best_vels[1]
 
         data.qvel[:6] = thetadot
         mujoco.mj_step(model, data)
@@ -126,18 +102,6 @@ with viewer.launch_passive(model, data) as viewer_:
         viewer_.sync()
 
         if cost_g<0.02 and cost_r<0.02:
-        #     target = "home"
-            # if target == "target_0":
-            #     target = "target_1"
-            # elif target == "target_1":
-            #     model.body(name="target_0").pos = data.site_xpos[cem.tcp_id].copy()
-            #     model.body(name="target_0").quat = data.xquat[cem.hande_id].copy()
-            #     target = "home"
-
-            # model.body(name="target_0").pos = target_positions[target_idx]
-            # model.body(name="target_0").quat = target_rotations[target_idx]
-            # if target_idx<len(target_positions)-1:
-            #     target_idx += 1
 
             model.body(name="target_1").pos = target_positions[target_idx]
             model.body(name="target_1").quat = target_rotations[target_idx]

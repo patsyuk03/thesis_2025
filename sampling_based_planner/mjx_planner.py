@@ -85,6 +85,13 @@ class cem_planner():
 		self.l_3 = 1.0
 		self.ellite_num = int(self.num_elite*self.num_batch)
 
+		self.alpha_mean = 0.6
+		self.alpha_cov = 0.6
+
+		self.lamda = 0.001
+		self.g = 10
+		self.vec_product = jax.jit(jax.vmap(self.comp_prod, 0, out_axes=(0)))
+
 		self.model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 		self.model = mujoco.MjModel.from_xml_path(self.model_path)
 		self.data = mujoco.MjData(self.model)
@@ -100,7 +107,6 @@ class cem_planner():
 		target_mask = ~jnp.any(jnp.isin(self.mjx_data.contact.geom, target_geom_id), axis=1)
 		self.mask = jnp.any(jnp.isin(self.mjx_data.contact.geom, geom_ids), axis=1)
 		self.mask = jnp.logical_and(target_mask, self.mask)
-		print(self.mask.shape)
 
 		self.hande_id = self.model.body(name="hande").id
 		self.tcp_id = self.model.site(name="tcp").id
@@ -167,19 +173,6 @@ class cem_planner():
 		Q_inv = np.linalg.inv(np.vstack((np.hstack(( np.dot(self.A_projection.T, self.A_projection)+self.rho_ineq*jnp.dot(self.A_v_ineq.T, self.A_v_ineq)+self.rho_ineq*jnp.dot(self.A_a_ineq.T, self.A_a_ineq)+self.rho_ineq*jnp.dot(self.A_p_ineq.T, self.A_p_ineq), A_eq.T)  ), 
 									 np.hstack((A_eq, np.zeros((np.shape(A_eq)[0], np.shape(A_eq)[0])))))))	
 		return Q_inv
-
-	@partial(jax.jit, static_argnums=(0,))
-	def compute_xi_samples(self, key, xi_mean, xi_cov ):
-		key, subkey = jax.random.split(key)
-		xi_samples = jax.random.multivariate_normal(key, xi_mean, xi_cov+0.003*jnp.identity(self.nvar), (self.num_batch, ))
-		return xi_samples, key
-	
-	@partial(jax.jit, static_argnums=(0,))
-	def compute_mean_cov(self, xi_ellite):
-		xi_mean = jnp.mean(xi_ellite, axis = 0)
-		xi_cov = jnp.cov(xi_ellite.T)
-		return xi_mean, xi_cov
-
 
 	@partial(jax.jit, static_argnums=(0,))
 	def compute_boundary_vec_single(self, state_term):
@@ -305,18 +298,47 @@ class cem_planner():
 		g = -collision[:, 1:]+collision[:, :-1]-y*collision[:, :-1]
 		cost_c = jnp.sum(jnp.max(g.reshape(g.shape[0], g.shape[1], 1), axis=-1, initial=0)) + jnp.sum(jnp.where(collision<0, True, False))
 
-		cost = self.cost_weights['w_pos']*obj_cost_g + self.cost_weights['w_rot']*obj_cost_r + self.cost_weights['w_col']*cost_c + eef_cost_g*2.5+eef_cost_r*1
+		cost = self.cost_weights['w_pos']*obj_cost_g + self.cost_weights['w_rot']*obj_cost_r + self.cost_weights['w_col']*cost_c + eef_cost_g*3.5+eef_cost_r*1
 		return cost, eef_cost_g_, cost_c
 	
 	@partial(jax.jit, static_argnums=(0, ))
 	def compute_ellite_samples(self, cost_batch, xi_filtered):
 		idx_ellite = jnp.argsort(cost_batch)
+		cost_ellite = cost_batch[idx_ellite[0:self.ellite_num]]
 		xi_ellite = xi_filtered[idx_ellite[0:self.ellite_num]]
-		return xi_ellite, idx_ellite
+		return xi_ellite, idx_ellite, cost_ellite
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_xi_samples(self, key, xi_mean, xi_cov ):
+		key, subkey = jax.random.split(key)
+		xi_samples = jax.random.multivariate_normal(key, xi_mean, xi_cov+0.003*jnp.identity(self.nvar), (self.num_batch, ))
+		return xi_samples, key
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def comp_prod(self, diffs, d ):
+		term_1 = jnp.expand_dims(diffs, axis = 1)
+		term_2 = jnp.expand_dims(diffs, axis = 0)
+		prods = d * jnp.outer(term_1,term_2)
+		return prods	
+	
+	@partial(jax.jit, static_argnums=(0,))
+	def compute_mean_cov(self, cost_ellite, mean_control_prev, cov_control_prev, xi_ellite):
+		w = cost_ellite
+		w_min = jnp.min(cost_ellite)
+		w = jnp.exp(-(1/self.lamda) * (w - w_min ) )
+		sum_w = jnp.sum(w, axis = 0)
+		mean_control = (1-self.alpha_mean)*mean_control_prev + self.alpha_mean*(jnp.sum( (xi_ellite * w[:,jnp.newaxis]) , axis= 0)/ sum_w)
+		diffs = (xi_ellite - mean_control)
+		prod_result = self.vec_product(diffs, w)
+		cov_control = (1-self.alpha_cov)*cov_control_prev + self.alpha_cov*(jnp.sum( prod_result , axis = 0)/jnp.sum(w, axis = 0)) + 0.0001*jnp.identity(self.nvar)
+		return mean_control, cov_control
 	
 	@partial(jax.jit, static_argnums=(0,))
 	def cem_iter(self, carry, _):
 		init_pos, init_vel, init_target_pos, init_target_rot, target_pos, target_rot, xi_mean, xi_cov, key, state_term = carry
+
+		xi_mean_prev = xi_mean 
+		xi_cov_prev = xi_cov
 
 		xi_samples, key = self.compute_xi_samples(key, xi_mean, xi_cov)
 		xi_filtered = self.compute_projection_filter(xi_samples, state_term)
@@ -326,8 +348,8 @@ class cem_planner():
 		theta, eef_pos, eef_rot, target_0_pos, target_0_rot, collision = self.compute_rollout_batch(thetadot, init_pos, init_vel, init_target_pos, init_target_rot)
 		cost_batch, cost_g_batch, cost_c_batch = self.compute_cost_batch(thetadot, eef_pos, eef_rot, target_0_pos, target_0_rot, collision, target_pos, target_rot)
 
-		xi_ellite, idx_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
-		xi_mean, xi_cov = self.compute_mean_cov(xi_ellite)
+		xi_ellite, idx_ellite, cost_ellite = self.compute_ellite_samples(cost_batch, xi_samples)
+		xi_mean, xi_cov = self.compute_mean_cov(cost_ellite, xi_mean_prev, xi_cov_prev, xi_ellite)
 
 		carry = (init_pos, init_vel, init_target_pos, init_target_rot, target_pos, target_rot, xi_mean, xi_cov, key, state_term)
 		return carry, (cost_batch, cost_g_batch, cost_c_batch, thetadot, theta)
