@@ -13,14 +13,13 @@ from quat_math import rotation_quaternion, quaternion_multiply, quaternion_dista
 start_time = time.time()
 cem =  cem_planner(
     num_dof=6, 
-    num_batch=2000, 
-    num_steps=20, 
+    num_batch=5000, 
+    num_steps=10, 
     maxiter_cem=2,
-    w_pos=10,
-    w_rot=2.5,
-    w_col=0.1,
-    num_elite=0.01,
-    timestep=0.05
+    num_elite=0.005,
+    timestep=0.05,
+    # eef_to_obj=0.2, obj_to_goal=2, push_align=0.6, obj_rot=3, eef_rot=0.1, collision=10
+    eef_to_obj=5, obj_to_goal=7, push_align=0.2, obj_rot=0, eef_rot=2, collision=10
     )
 print(f"Initialized CEM Planner: {round(time.time()-start_time, 2)}s")
 
@@ -84,10 +83,10 @@ with viewer.launch_passive(model, data) as viewer_:
         target_rot = model.body(name="target_1").quat
 
 
-        cost, best_cost_g, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot, init_position, init_rotation)
-        # thetadot = np.mean(best_vels[1:5], axis=0)
+        cost, best_cost_c, best_vels, best_traj, xi_mean = cem.compute_cem(xi_mean, data.qpos[:6], data.qvel[:6], data.qacc[:6], target_pos, target_rot, init_position, init_rotation)
+        thetadot = np.mean(best_vels[1:5], axis=0)
         # thetadot = np.mean(best_vels, axis=0)
-        thetadot = best_vels[1]
+        # thetadot = best_vels[1]
 
         data.qvel[:6] = thetadot
         mujoco.mj_step(model, data)
@@ -101,7 +100,7 @@ with viewer.launch_passive(model, data) as viewer_:
         print(f'Step Time: {"%.0f"%((time.time() - start_time)*1000)}ms | Cost g: {"%.2f"%(float(cost_g))} | Cost r: {"%.2f"%(float(cost_r))} | Cost c: {"%.2f"%(float(best_cost_c))} | Cost: {cost}')
         viewer_.sync()
 
-        if cost_g<0.02 and cost_r<0.02:
+        if cost_g<0.03:
 
             model.body(name="target_1").pos = target_positions[target_idx]
             model.body(name="target_1").quat = target_rotations[target_idx]
