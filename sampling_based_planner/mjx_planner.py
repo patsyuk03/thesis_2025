@@ -176,19 +176,6 @@ class cem_planner():
 		return Q_inv
 
 	@partial(jax.jit, static_argnums=(0,))
-	def compute_xi_samples(self, key, xi_mean, xi_cov ):
-		key, subkey = jax.random.split(key)
-		xi_samples = jax.random.multivariate_normal(key, xi_mean, xi_cov+0.003*jnp.identity(self.nvar), (self.num_batch, ))
-		return xi_samples, key
-	
-	@partial(jax.jit, static_argnums=(0,))
-	def compute_mean_cov(self, xi_ellite):
-		xi_mean = jnp.mean(xi_ellite, axis = 0)
-		xi_cov = jnp.cov(xi_ellite.T)
-		return xi_mean, xi_cov
-
-
-	@partial(jax.jit, static_argnums=(0,))
 	def compute_boundary_vec_single(self, state_term):
 		b_eq_term = state_term.reshape(5, self.num_dof).T
 		b_eq_term = b_eq_term.reshape(self.num_dof*5)
