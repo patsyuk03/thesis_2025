@@ -88,7 +88,7 @@ class cem_planner():
 		self.alpha_mean = 0.6
 		self.alpha_cov = 0.6
 
-		self.lamda = 0.001
+		self.lamda = 10
 		self.g = 10
 		self.vec_product = jax.jit(jax.vmap(self.comp_prod, 0, out_axes=(0)))
 
