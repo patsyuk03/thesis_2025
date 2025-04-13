@@ -13,9 +13,9 @@ from quat_math import rotation_quaternion, quaternion_multiply, quaternion_dista
 start_time = time.time()
 cem =  cem_planner(
     num_dof=6, 
-    num_batch=5000, 
-    num_steps=10, 
-    maxiter_cem=2,
+    num_batch=800, 
+    num_steps=8, 
+    maxiter_cem=1,
     w_pos=5,
     w_rot=1.5,
     w_col=10,
