@@ -10,14 +10,17 @@ import numpy as np
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
-mjx_model = mjx.put_model(model)
-mjx_data = mjx.put_data(model, data)
+data.qpos[:6] = np.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
 
-# jax.config.update('jax_default_matmul_precision', 'high')
-# jax.config.update("jax_enable_x64", True)
-# jit_step = jax.jit(mjx.step)
-# mjx_data = jit_step(mjx_model, mjx_data)
+# viewer.launch(model, data)
 
-# x = np.where(mjx_data.contact.geom.tolist() == [1,36])
-# print((np.array(mjx_data.contact.geom.tolist()) == (1,36)).all(axis=1).nonzero()[0][0])
-viewer.launch(model, data)
+with mujoco.viewer.launch_passive(model, data) as viewer:
+    # Set camera parameters
+    viewer.cam.lookat[:] = [0.0, 0.0, 0.8]  
+    viewer.cam.distance = 5.0 
+    viewer.cam.azimuth = 90.0              # Horizontal angle in degrees
+    viewer.cam.elevation = -30.0           # Vertical angle in degrees
+
+    while True:
+        mujoco.mj_step(model, data)
+        viewer.sync()
