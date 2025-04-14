@@ -10,7 +10,7 @@ import numpy as np
 model_path = f"{os.path.dirname(__file__)}/ur5e_hande_mjx/scene.xml" 
 model = mujoco.MjModel.from_xml_path(model_path)
 data = mujoco.MjData(model)
-data.qpos[:6] = np.array([1.5, -1.8, 1.75, -1.25, -1.6, 0])
+data.qpos[:6] = np.array([-1.52, -1.26, -1.75, -1.69,  1.64, -2.91])
 
 # viewer.launch(model, data)
 
