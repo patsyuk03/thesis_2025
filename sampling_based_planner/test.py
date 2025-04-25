@@ -1,6 +1,12 @@
-from quat_math import rotation_quaternion, quaternion_multiply
 import numpy as np
 
-q = quaternion_multiply(rotation_quaternion(90, np.array([1,0,0])), rotation_quaternion(45, np.array([0,0,1])))
-print(q)
-print(rotation_quaternion(90, np.array([1,0,0])))
+arr1 = np.array([[1],
+                 [2]])
+arr2 = np.array([[5, 6],
+                 [7, 8]])
+
+arr_result = np.multiply(arr1, arr2)
+
+print(arr_result)
+
+print(arr1*arr2)
